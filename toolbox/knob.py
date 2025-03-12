@@ -5,11 +5,12 @@ from xtrack import Line
 
 class Knob:
 	"""
-	An object that I prefer more to the typical way, the knobs are implemented in `xsuite`.
+	A class to add a knon to an xsuite lattice in straight forward way
 	"""
-	def __init__(self, input_data):
+	def __init__(self, input_data, **kwargs):
 		self.modifications = None
 		
+		self.skip_missing_elements = kwargs.get('skip_missing_elements', False)
 		self.line = None
 
 		if isinstance(input_data, str):
@@ -43,7 +44,8 @@ class Knob:
 		"""
 		self.line = line
 
-		self._check_compatibility()
+		if not self.skip_missing_elements:
+			self._check_compatibility()
 
 	def apply(self, amplitude: float):
 		"""
@@ -54,6 +56,9 @@ class Knob:
 			raise ValueError("Knob is not attached to any beamline")
 
 		for element in self.modifications:
+			if not element in self.line.element_names and self.skip_missing_elements:
+				continue
+
 			for prop in self.modifications[element]:
 				value = getattr(self.line[element], prop)
 				modification = self.modifications[element][prop]
