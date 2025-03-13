@@ -1,3 +1,3 @@
 from toolbox.apertures import realign_mad_apertures
 from toolbox.plotting import PlotContext, phase_space_evolution
-from toolbox.separatrix_search import get_stable_limit, _stable_particle_id
+from toolbox.phase_space import *
