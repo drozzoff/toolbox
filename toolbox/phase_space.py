@@ -88,10 +88,24 @@ def get_stable_limit(line: Line, ion: dict, test_range: List[float], ex_norm: fl
 	precision
 		distance between the stable and unstable track. `test_range` is used to evaluate this.
 	
-	Additiona parameters
+	Additional parameters
 	---------------------
-	with_progress
+	shrinkage_strength: int or str
+		Defines how the `test_range` is shrinked in iterations.
+		If `int` adds extra steps to the left and right of the stable particle.
+		If `str` is `'max'` no extra steps are added.
+		Default is `'max'`.
+	max_iterations : int
+		Limit on the number of iterations. Default is `2000`.
+	with_progress : bool
 		whether to show a progress bar or not. Default is `False`
+
+	Returns
+	-------
+	List[float]
+		First element is unstable particle, second element is stable particle.
+	dict
+		Contains the data of the iterations. Keys are `jx_diff` and `x_norm`.
 	"""
 	with_progress = kwargs.get('with_progress', False)
 	
