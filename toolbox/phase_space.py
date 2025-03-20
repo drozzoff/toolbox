@@ -310,4 +310,38 @@ def compute_simple_masks(particles: Particles):
 
 	return res
 
+def find_triangle_vertices(x: np.ndarray, y: np.ndarray):
+	points = np.column_stack((x, y))
+	n_points = len(points)
+
+	# the longest side of the triangle
+	dist_max = 0
+	vertice1_index, vertice2_index = 0, 0
+	for i in range(n_points):
+		for j in range(i + 1, n_points):
+			dist = np.linalg.norm(points[i] - points[j])
+			if dist > dist_max:
+				dist_max = dist
+				vertice1_index, vertice2_index = i, j
+
+	vertice1 = points[vertice1_index]
+	vertice2 = points[vertice2_index]
+
+	def point_line_distance(x, linepoint1, linepoint2):
+		return np.abs(np.cross(linepoint2 - linepoint1, x - linepoint1)) / np.linalg.norm(linepoint2 - linepoint1)
+
+	# the furthest point from a line between
+	# vertice1 and vertice2
+	dist_max = 0
+	vertice3_index = None
+	for i in range(n_points):
+		if i == vertice1_index or i == vertice2_index:
+			continue
+		dist = point_line_distance(points[i], vertice1, vertice2)
+		if dist > dist_max:
+			dist_max = dist
+			vertice3_index = i
+		
+	vertice3 = points[vertice3_index]
 	
+	return np.array([vertice1, vertice2, vertice3])
