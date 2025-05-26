@@ -194,7 +194,7 @@ class PlotContext:
 		
 		self.aperture_artists = []
 
-		for i, name in enumerate(self.line.element_dict):
+		for i, name in enumerate(self.line.element_names):
 			element = self.line.element_dict[name]
 			s = self.line.get_s_position(name)
 
@@ -223,7 +223,7 @@ class PlotContext:
 
 				elliptic_aper_cache['is_empty'] = False   
 							
-			if isinstance(element, xt.LimitRect):
+			elif isinstance(element, xt.LimitRect):
 
 				# if the aperture is Rectangular and there is some elliptic data
 				# not plotted then plotting it and ressseting elliptic_aper_cache
@@ -285,6 +285,24 @@ class PlotContext:
 					rectangle = Rectangle((s, self.config['Aperture']['Beampipe']['x']), length, element.max_x - self.config['Aperture']['Beampipe']['x'], color = "black", linewidth = 1.0)
 					self.main_subplot.add_patch(rectangle)
 					self.aperture_artists.append(rectangle)
+			else:
+				if not elliptic_aper_cache['is_empty']:
+					# drop down to the default value
+					elliptic_aper_cache['s_up'].append(elliptic_aper_cache['s_up'][-1])
+					elliptic_aper_cache['s_down'].append(elliptic_aper_cache['s_down'][-1])
+					
+					elliptic_aper_cache['aper_up'].append(self.config['Aperture']['Beampipe']['x'])
+					elliptic_aper_cache['aper_down'].append(-self.config['Aperture']['Beampipe']['x'])
+					
+					curve_up, = self.main_subplot.plot(elliptic_aper_cache['s_up'], elliptic_aper_cache['aper_up'], '-', color = "red")
+					curve_down, = self.main_subplot.plot(elliptic_aper_cache['s_down'], elliptic_aper_cache['aper_down'], '-', color = "red")
+					
+					self.aperture_artists.extend([curve_up, curve_down])
+
+					#reseting the dict
+					for key in elliptic_aper_cache:
+						elliptic_aper_cache[key] = []
+						elliptic_aper_cache['is_empty'] = True
 		
 	def add_plot(self, x, y, *args, **kwargs):
 		"""

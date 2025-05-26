@@ -5,7 +5,8 @@ DEPENDENCIES = [
 	'pandas',
 	'rich',
 	'numpy',
-	'matplotlib'
+	'matplotlib',
+	'plotly'
 ]
 
 setup(

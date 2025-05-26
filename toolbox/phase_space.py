@@ -142,9 +142,8 @@ def get_stable_limit(line: Line, ion: dict, test_range: List[float], ex_norm: fl
 			charge_ratio = ion['charge'] / line.particle_ref.q0,
 			x = test_beam.x,
 			px = test_beam.px,
-			zeta = 0.0,
-			delta = 0.0,
-			method = '4d'
+			zeta = kwargs.get("zeta", 0.0),
+			delta = kwargs.get("delta", 0.0)
 		)
 		particle_id_stable, jx_diff = stable_particle_id(
 			line = line, 
