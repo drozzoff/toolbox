@@ -199,9 +199,11 @@ class TrackingDashboard:
 								if key in incoming:
 									self.data_buffer[key].extend(incoming[key])
 							
-							for key_data in self.data_to_monitor:
-								if self._supported_data[key_data]['_callback'] is not None:
-									self._supported_data[key_data]['_callback']()
+							for data_key in self.data_to_monitor:
+								# running callback on the data_key only when there is new data 
+								# in all the dependant data buffers
+								if self.update_figure(data_key) and self._supported_data[data_key]['_callback'] is not None:
+									self._supported_data[data_key]['_callback']()
 
 				except json.JSONDecodeError as e:
 					print("[ERROR] Invalid JSON", e)
@@ -495,8 +497,8 @@ class TrackingDashboard:
 
 			case 'separatrix':
 				trace1 = go.Scatter(
-					x = self.data_buffer['x_stable'],
-					y = self.data_buffer['px_stable'],
+					x = self.data_buffer['x_unstable'].data,
+					y = self.data_buffer['px_unstable'].data,
 					mode = 'markers',
 					marker = dict(
 						size = 5,
@@ -507,8 +509,8 @@ class TrackingDashboard:
 				)
 
 				trace2 = go.Scatter(
-					x = self.data_buffer['x_unstable'],
-					y = self.data_buffer['px_unstable'],
+					x = self.data_buffer['x_stable'].data,
+					y = self.data_buffer['px_stable'].data,
 					mode = 'markers',
 					marker = dict(
 						size = 5,
@@ -562,6 +564,7 @@ class TrackingDashboard:
 			'phase_space': [],
 			'separatrix': []
 		}
+		print(self.data_to_monitor)
 		for key in self.data_to_monitor:
 			
 			# Tab 1 - Turn dependent data
@@ -569,12 +572,15 @@ class TrackingDashboard:
 				divs['turn_dependent_data'].append(html.Div([dcc.Graph(id = key)], style = {'display': 'flex', 'gap': '10px'}))
 			
 			# Tab 2 - Phase space
-			if key in {'ES_entrance_phase_space', 'NS_entrance_phase_space'}:
+			if key in {'ES_entrance_phase_space', 'MS_entrance_phase_space'}:
 				divs['phase_space'].append(html.Div([dcc.Graph(id = key)], style = {'display': 'flex', 'gap': '10px'}))
 			
 			# Tab 3 - Separatrix
 			if key in {'separatrix'}:
 				divs['separatrix'].append(html.Div([dcc.Graph(id = key)], style = {'display': 'flex', 'gap': '10px'}))
+
+		for key in divs:
+			print(f"{key}: {divs[key]}")
 
 		tabs = []
 		for key in divs:
@@ -589,6 +595,7 @@ class TrackingDashboard:
 		])
 
 		callback_outputs = [Output(x, 'figure') for x in self.data_to_monitor]
+		print(callback_outputs)
 
 		@self.app.callback(callback_outputs, [Input('refresh', 'n_intervals')])
 		def update_graph(n):
@@ -606,6 +613,8 @@ class TrackingDashboard:
 					self.data_buffer[key].recent_data = []
 
 			return updates
+		
+		print("LAYOUT children for phase_space tab:", self.app.layout.children[1].children)
 
 		try:
 			print("[INFO] Starting Dash server...")
@@ -621,7 +630,9 @@ if __name__ == "__main__":
 			"intensity", 
 			"ES_septum_anode_losses", 
 			"spill", 
-			"ES_entrance_phase_space"
+			"ES_entrance_phase_space",
+			"MS_entrance_phase_space",
+			"separatrix"
 		]
 	)
 	test.start_listener()
