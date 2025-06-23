@@ -42,62 +42,48 @@ class DataBuffer:
 			res += f"New data received = {self.recent_data}\n"
 		return res
 
+	__repr__ = __str__
+
+@dataclass
+class DataField:
+	"""Simple class to store the dependances and state of the data field in the dashboard"""
+	buffer_dependance: list[str] = field(default_factory = list)
+	create_new_buffer: list[str] | None = None
+	callback: Optional[callable] = None
+	state: bool = False
 
 class TrackingDashboard:
 	"""
 	Class to manage the tracking dashboard.
 	"""
-	_supported_data = { 
-		'intensity': {
-			'_dep': ['turn', 'Nparticles'],
-			'_new': None,
-			'_callback': None
-			},
-		'ES_septum_anode_losses': {
-			'_dep': ['turn', 'ES_septum_anode_loss_outside', 'x_extracted_at_ES', 'px_extracted_at_ES'],
-			'_new':  ['ES_septum_anode_loss_inside', 'ES_septum_anode_loss_total'],
-			'_callback': None
-			},
-		'ES_septum_anode_losses_outside': {
-			'_dep': ['turn', 'ES_septum_anode_loss_outside'],
-			'_new': None,
-			'_callback': None
-		},
-		'ES_septum_anode_losses_inside': {
-			'_dep': ['turn', 'x_extracted_at_ES', 'px_extracted_at_ES'],
-			'_new': ['ES_septum_anode_loss_inside'],
-			'_callback': None
-		},
-		'spill': {
-			'_dep': ['turn', 'x_extracted_at_ES', 'px_extracted_at_ES'],
-			'_new': ['spill'],
-			'_callback': None
-		},
-		'ES_entrance_phase_space': {
-			'_dep': ['x_extracted_at_ES', 'px_extracted_at_ES'],
-			'_new': None,
-			'_callback': None,
-		},
-		'MS_entrance_phase_space': {
-			'_dep': ['x_extracted_at_MS', 'px_extracted_at_MS'],
-			'_new': None,
-			'_callback': None,
-		},
-		'separatrix': {
-			'_dep': ['x_stable', 'px_stable', 'x_unstable', 'px_unstable'],
-			'_new': None,
-			'_callback': None,
-		}
-	}
-
 	def __init__(
 			self,
 			host: str = '127.0.0.1',
 			port: int = 0,
 			data_to_monitor: list[str] | str | None = None
 		):
-		"""
-		"""
+		self.data_fields = {
+			'intensity': DataField(['turn', 'Nparticles']),
+			'ES_septum_anode_losses': DataField(
+				['turn', 'ES_septum_anode_loss_outside', 'x_extracted_at_ES', 'px_extracted_at_ES'],
+				['ES_septum_anode_loss_inside', 'ES_septum_anode_loss_total'],
+				self.calculate_total_loss_at_septum
+			),	
+			'ES_septum_anode_losses_outside': DataField(['turn', 'ES_septum_anode_loss_outside']),
+			'ES_septum_anode_losses_inside': DataField(
+				['turn', 'x_extracted_at_ES', 'px_extracted_at_ES'],
+				['ES_septum_anode_loss_inside'],
+				self.calculate_loss_inside_septum
+			),
+			'spill': DataField(
+				['turn', 'x_extracted_at_ES', 'px_extracted_at_ES'], 
+				['spill'],
+				self.calculate_spill
+			),
+			'ES_entrance_phase_space': DataField(['x_extracted_at_ES', 'px_extracted_at_ES']),
+			'MS_entrance_phase_space': DataField(['x_extracted_at_MS', 'px_extracted_at_MS']),
+			'separatrix': DataField(['x_stable', 'px_stable', 'x_unstable', 'px_unstable'])
+		}
 
 		if host is None:
 			raise ValueError("Host cannot be `None`.")
@@ -113,22 +99,24 @@ class TrackingDashboard:
 
 		self.data_to_expect, self.data_buffer = [], {}
 
-		print(self.data_to_monitor)
 		for data_key in self.data_to_monitor:
-			if data_key not in self._supported_data:
-				raise ValueError(f"Unsupported data requested: {data_key}. Supported data: {self._supported_data}")
+			if data_key not in self.data_fields:
+				raise ValueError(f"Unsupported data requested: {data_key}. Supported data: {self.data_fields}")
 
-			for key in self._supported_data[data_key]['_dep']:
+			# if needed creating buffers for data to read from the user
+			for key in self.data_fields[data_key].buffer_dependance:
 				if not key in self.data_to_expect:
 					self.data_to_expect.append(key)
 			
 					self.data_buffer[key] = DataBuffer()
 			
-			if self._supported_data[data_key]['_new'] is not None:
-				for key in self._supported_data[data_key]['_new']:
+			# creating additional buffers
+			if self.data_fields[data_key].create_new_buffer is not None:
+				for key in self.data_fields[data_key].create_new_buffer:
 					self.data_buffer[key] = DataBuffer()
 
-		self._assign_callbacks()
+			# activating the DataField
+			self.data_fields[data_key].state = True
 
 	def calculate_loss_inside_septum(self, append_to_buffer = True) -> int: 		
 		res = 0
@@ -149,18 +137,11 @@ class TrackingDashboard:
 
 		self.data_buffer['ES_septum_anode_loss_total'].append(res)
 
-	def calcualte_spill(self):
+	def calculate_spill(self):
 		extracted = len(self.data_buffer['x_extracted_at_ES'].recent_data)
 		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
 #		print(f"Extracted = {extracted}, Lost inside = {lost_inside}")
 		self.data_buffer['spill'].append(extracted - lost_inside)
-
-	def _assign_callbacks(self):
-		self._supported_data['ES_septum_anode_losses_inside']['_callback'] = self.calculate_loss_inside_septum
-
-		self._supported_data['ES_septum_anode_losses']['_callback'] = self.calculate_total_loss_at_septum
-
-		self._supported_data['spill']['_callback'] = self.calcualte_spill
 
 	def start_listener(self):
 		def run():
@@ -202,8 +183,8 @@ class TrackingDashboard:
 							for data_key in self.data_to_monitor:
 								# running callback on the data_key only when there is new data 
 								# in all the dependant data buffers
-								if self.update_figure(data_key) and self._supported_data[data_key]['_callback'] is not None:
-									self._supported_data[data_key]['_callback']()
+								if self.update_figure(data_key) and self.data_fields[data_key].callback is not None:
+									self.data_fields[data_key].callback()
 
 				except json.JSONDecodeError as e:
 					print("[ERROR] Invalid JSON", e)
@@ -218,7 +199,7 @@ class TrackingDashboard:
 		If new data available - returns `True` to update the figure.
 		'''
 
-		res_list = [self.data_buffer[key].new_data for key in self._supported_data[data_key]['_dep']]
+		res_list = [self.data_buffer[key].new_data for key in self.data_fields[data_key].buffer_dependance]
 		if not(all(res_list) or not any(res_list)):
 			raise ValueError(f"Mismatch between the incoming data for {data_key}")
 		
@@ -564,7 +545,6 @@ class TrackingDashboard:
 			'phase_space': [],
 			'separatrix': []
 		}
-		print(self.data_to_monitor)
 		for key in self.data_to_monitor:
 			
 			# Tab 1 - Turn dependent data
@@ -608,7 +588,7 @@ class TrackingDashboard:
 					updates.append(no_update)
 			
 			for data_key in self.data_to_monitor:
-				for key in self._supported_data[data_key]['_dep']:
+				for key in self.data_fields[data_key].buffer_dependance:
 					self.data_buffer[key].new_data = False
 					self.data_buffer[key].recent_data = []
 
