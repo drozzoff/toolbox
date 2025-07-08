@@ -7,7 +7,8 @@ DEPENDENCIES = [
 	'numpy',
 	'matplotlib',
 	'plotly',
-	'sklearn'
+	'sklearn',
+	'seaborn'
 ]
 
 setup(

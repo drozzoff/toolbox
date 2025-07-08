@@ -164,7 +164,7 @@ def fit_peak_with_gaussian(
 	if weighted_score:
 		score = r2_score(y_data, y_pred, sample_weight = w)
 	else:
-		score = r2_score(y_data, y_pred, sample_weight = w)
+		score = r2_score(y_data, y_pred)
 
 	fitted_gauss = lambda x: gauss(x, A_fit, mu_fit, sig_fit)
 
