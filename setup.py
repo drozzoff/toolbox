@@ -6,7 +6,8 @@ DEPENDENCIES = [
 	'rich',
 	'numpy',
 	'matplotlib',
-	'plotly'
+	'plotly',
+	'sklearn'
 ]
 
 setup(
