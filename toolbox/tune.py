@@ -256,3 +256,83 @@ def parse_tunes(
 	res = summary[summary.score >= r2_score_cut]
 
 	return res
+
+if __name__ == "__main__":
+	"""An example, parsing the spectrum"""
+
+	ks_offset = "0.14"
+	ks_amp = "0.06"
+	dp = "-1e-3"
+
+
+	p_0 = pd.read_pickle(f"tune_measurements/noise excitation/ks.offset = {ks_offset}/ks.amp = {ks_amp}/{dp} offset/horizontal_spectrum.pkl")
+	path = f"tune_measurements/noise excitation/ks.offset = {ks_offset}/ks.amp = {ks_amp}/{dp} offset/"
+
+	res = parse_tunes(
+		data = p_0,
+		noise_percentile = 0.99,
+		search_region_width = 5,
+		noise_width = 3,
+		peak_min_length = 1,
+		post_dilation = 3,
+		weights_func = rational_weight,
+		r2_score_cut = 0.5,
+		verbose = 2
+	)
+
+	plt.figure()
+
+	plt.errorbar(
+		res.center,
+		res.index,
+		xerr = res.error,
+		fmt = 'o',
+		capsize = 3,
+		color = "blue",
+		label = "Reconstructed peaks"
+	)
+
+	mean = np.sum(res.center) / len(res.center)
+	var = np.sum((res.center - mean)**2) / len(res.center)
+	sigma = np.sqrt(var)
+	print(f"Normal: {mean} +/- {sigma}")
+
+	w = 1.0 / res.error**2
+	w_mean = np.sum(res.center * w)/ np.sum(w)
+	var = np.sum(w * (res.center - w_mean)**2) / np.sum(w)
+	w_sigma = np.sqrt(var)
+	print(f"Wighted: {w_mean} +/- {w_sigma}")
+
+	plt.axvline(x = mean, color = "green", label = f"Avg., {round(mean, 5)} +/- {round(sigma, 5)}")
+	plt.axvspan(mean - sigma, mean + sigma, color = 'green', alpha = 0.2)
+
+	plt.axvline(x = w_mean, color = "red", label = f"W.avg., {round(w_mean, 5)} +/- {round(w_sigma, 5)}")
+	plt.axvspan(w_mean - w_sigma, w_mean + w_sigma, color = 'red', alpha = 0.2)
+
+
+	timestamp_bins = 5
+	timestamp_step = (res.index.max() - res.index.min()) / timestamp_bins
+
+	for i in range(timestamp_bins):
+		mask = np.logical_and(res.index - res.index.min() >= timestamp_step * i, res.index - res.index.min() <= timestamp_step * (i + 1))
+
+		tunes = res.center[mask]
+		tunes_errors = res.error[mask]
+
+		x_mean = np.sum(tunes) / len(tunes)
+		
+		var = np.sum((tunes - x_mean)**2) / len(tunes)
+		sigma = np.sqrt(var)
+
+	#    print(x_mean, sigma)
+		plt.fill_betweenx(
+			[res.index.min() + timestamp_step * i, res.index.min() + timestamp_step * (i + 1)], 
+			x_mean - sigma, 
+			x_mean + sigma, 
+			color = "navy", 
+			alpha = 0.3
+		)
+
+	plt.ylim(-0.01, 0.36)
+	plt.legend()
+	plt.show()
