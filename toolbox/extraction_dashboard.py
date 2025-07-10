@@ -85,6 +85,8 @@ class TrackingDashboard:
 			'separatrix': DataField(['x_stable', 'px_stable', 'x_unstable', 'px_unstable'])
 		}
 
+		self._buflock = threading.Lock()
+
 		if host is None:
 			raise ValueError("Host cannot be `None`.")
 		
@@ -176,15 +178,17 @@ class TrackingDashboard:
 
 							incoming = json.loads(line)
 #							print(incoming)
-							for key in self.data_to_expect:
-								if key in incoming:
-									self.data_buffer[key].extend(incoming[key])
-							
-							for data_key in self.data_to_monitor:
-								# running callback on the data_key only when there is new data 
-								# in all the dependant data buffers
-								if self.update_figure(data_key) and self.data_fields[data_key].callback is not None:
-									self.data_fields[data_key].callback()
+
+							with self._buflock:
+								for key in self.data_to_expect:
+									if key in incoming:
+										self.data_buffer[key].extend(incoming[key])
+								
+								for data_key in self.data_to_monitor:
+									# running callback on the data_key only when there is new data 
+									# in all the dependant data buffers
+									if self.update_figure(data_key) and self.data_fields[data_key].callback is not None:
+										self.data_fields[data_key].callback()
 
 				except json.JSONDecodeError as e:
 					print("[ERROR] Invalid JSON", e)
@@ -197,12 +201,11 @@ class TrackingDashboard:
 	def update_figure(self, data_key):
 		'''
 		If new data available - returns `True` to update the figure.
-		'''
-
+		'''		
 		res_list = [self.data_buffer[key].new_data for key in self.data_fields[data_key].buffer_dependance]
 		if not(all(res_list) or not any(res_list)):
 			raise ValueError(f"Mismatch between the incoming data for {data_key}")
-		
+
 		if all(res_list):
 			return True
 		
@@ -559,8 +562,6 @@ class TrackingDashboard:
 			if key in {'separatrix'}:
 				divs['separatrix'].append(html.Div([dcc.Graph(id = key)], style = {'display': 'flex', 'gap': '10px'}))
 
-		for key in divs:
-			print(f"{key}: {divs[key]}")
 
 		tabs = []
 		for key in divs:
@@ -575,26 +576,26 @@ class TrackingDashboard:
 		])
 
 		callback_outputs = [Output(x, 'figure') for x in self.data_to_monitor]
-		print(callback_outputs)
 
 		@self.app.callback(callback_outputs, [Input('refresh', 'n_intervals')])
 		def update_graph(n):
 
 			updates = []
-			for data_key in self.data_to_monitor:
-				if self.update_figure(data_key):
-					updates.append(self.plot_figure(data_key))
-				else:
-					updates.append(no_update)
-			
-			for data_key in self.data_to_monitor:
-				for key in self.data_fields[data_key].buffer_dependance:
-					self.data_buffer[key].new_data = False
-					self.data_buffer[key].recent_data = []
+			with self._buflock:
+				for data_key in self.data_to_monitor:
+					if self.update_figure(data_key):
+						updates.append(self.plot_figure(data_key))
+					else:
+						updates.append(no_update)
+				
+				for data_key in self.data_to_monitor:
+					for key in self.data_fields[data_key].buffer_dependance:
+						self.data_buffer[key].new_data = False
+						self.data_buffer[key].recent_data = []
 
 			return updates
 		
-		print("LAYOUT children for phase_space tab:", self.app.layout.children[1].children)
+#		print("LAYOUT children for phase_space tab:", self.app.layout.children[1].children)
 
 		try:
 			print("[INFO] Starting Dash server...")
@@ -607,12 +608,12 @@ if __name__ == "__main__":
 	test = TrackingDashboard(
 		port = 35235, 
 		data_to_monitor = [
-			"intensity", 
-			"ES_septum_anode_losses", 
-			"spill", 
-			"ES_entrance_phase_space",
-			"MS_entrance_phase_space",
-			"separatrix"
+#			"intensity", 
+			"ES_septum_anode_losses",
+#			"spill", 
+#			"ES_entrance_phase_space",
+#			"MS_entrance_phase_space",
+#			"separatrix"
 		]
 	)
 	test.start_listener()
