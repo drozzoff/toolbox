@@ -2,6 +2,7 @@ import dash
 from dash import dcc, html, no_update
 from dash.dependencies import Output, Input
 import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 import threading
 import socket
 import json
@@ -80,6 +81,11 @@ class TrackingDashboard:
 				['spill'],
 				self.calculate_spill
 			),
+			'spill_mixed': DataField(
+				['turn', 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
+				['spill_C', 'spill_He'],
+				self.calculate_spill_mixed
+			),
 			'ES_entrance_phase_space': DataField(['x_extracted_at_ES', 'px_extracted_at_ES']),
 			'MS_entrance_phase_space': DataField(['x_extracted_at_MS', 'px_extracted_at_MS']),
 			'separatrix': DataField(['x_stable', 'px_stable', 'x_unstable', 'px_unstable'])
@@ -120,30 +126,46 @@ class TrackingDashboard:
 			# activating the DataField
 			self.data_fields[data_key].state = True
 
-	def calculate_loss_inside_septum(self, append_to_buffer = True) -> int: 		
-		res = 0
-		for x, px in zip(self.data_buffer['x_extracted_at_ES'].recent_data, self.data_buffer['px_extracted_at_ES'].recent_data):
-			if x > -0.055 - (px + 7.4e-3)**2/(2 * 1.7857e-3):
-				res += 1
+	def calculate_loss_inside_septum(self, append_to_buffer = True): 		
+		x = np.array(self.data_buffer['x_extracted_at_ES'].recent_data)
+		px = np.array(self.data_buffer['px_extracted_at_ES'].recent_data)
+
+		threshold = -0.055 - (px + 7.4e-3)**2  / (2 * 1.7857e-3)
+		lost_inside_septum_mask = x > threshold
 		
 		if append_to_buffer:
-			self.data_buffer['ES_septum_anode_loss_inside'].append(res)
+			self.data_buffer['ES_septum_anode_loss_inside'].append(sum(lost_inside_septum_mask))
 		
-		return res
+		return lost_inside_septum_mask
 
 	def calculate_total_loss_at_septum(self):
 		# the bot check is solely for the case where we plot the total loss including the other 
 		# losses aas well
 		append_to_buffer = False if 'ES_septum_anode_losses_inside' in self.data_to_monitor else True
-		res = self.calculate_loss_inside_septum(append_to_buffer = append_to_buffer) + self.data_buffer['ES_septum_anode_loss_outside'].recent_data[0]
+		res = sum(self.calculate_loss_inside_septum(append_to_buffer = append_to_buffer)) + self.data_buffer['ES_septum_anode_loss_outside'].recent_data[0]
 
 		self.data_buffer['ES_septum_anode_loss_total'].append(res)
 
 	def calculate_spill(self):
 		extracted = len(self.data_buffer['x_extracted_at_ES'].recent_data)
-		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
+		lost_inside = sum(self.calculate_loss_inside_septum(append_to_buffer = False))
 #		print(f"Extracted = {extracted}, Lost inside = {lost_inside}")
 		self.data_buffer['spill'].append(extracted - lost_inside)
+
+	def calculate_spill_mixed(self):
+		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
+
+		# separating Carbon from Helium
+		ion = np.array(self.data_buffer['ion'].recent_data)
+		is_C = ion == "carbon"
+		is_He = ion == "helium"
+
+		extracted_C = is_C & ~lost_inside
+		extracted_He = is_He & ~lost_inside
+
+		self.data_buffer['spill_C'].append(sum(extracted_C))
+		self.data_buffer['spill_He'].append(sum(extracted_He))
+
 
 	def start_listener(self):
 		def run():
@@ -232,49 +254,114 @@ class TrackingDashboard:
 			
 			case 'ES_septum_anode_losses':
 				
-				trace3 = go.Scatter(
-					x = self.data_buffer['turn'].data,
-					y = self.data_buffer['ES_septum_anode_loss_inside'].data,
-					mode = 'lines',
-					line = {
-						'color': 'blue',
-						'width': 2,
-					},
-					name = "Lost inside of the septum",
-					showlegend = True
+				fig = make_subplots(
+					rows = 1, cols = 2,
+					column_widths = [0.8, 0.2],
+					horizontal_spacing = 0.05,
+					subplot_titles = ["Losses the septum", "Accumulated loss"]
 				)
 
-				trace2 = go.Scatter(
-					x = self.data_buffer['turn'].data,
-					y = self.data_buffer['ES_septum_anode_loss_outside'].data,
-					mode = 'lines',
-					line = {
-						'color': 'red',
-						'width': 2,
-					},
-					name = "Lost outside of the septum",
-					showlegend = True
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = self.data_buffer['ES_septum_anode_loss_total'].data,
+						mode = 'lines',
+						line = {
+							'color': 'green',
+							'width': 2,
+						},
+						name = "Total losses the septum",
+						showlegend = True
+					),
+					row = 1,
+					col = 1
+				)
+
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = self.data_buffer['ES_septum_anode_loss_outside'].data,
+						mode = 'lines',
+						line = {
+							'color': 'red',
+							'width': 2,
+						},
+						name = "Lost outside of the septum",
+						showlegend = True
+					),
+					row = 1,
+					col = 1
 				)
 				
-				trace1 = go.Scatter(
-					x = self.data_buffer['turn'].data,
-					y = self.data_buffer['ES_septum_anode_loss_total'].data,
-					mode = 'lines',
-					line = {
-						'color': 'green',
-						'width': 2,
-					},
-					name = "Total losses the septum",
-					showlegend = True
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = self.data_buffer['ES_septum_anode_loss_inside'].data,
+						mode = 'lines',
+						line = {
+							'color': 'blue',
+							'width': 2,
+						},
+						name = "Lost inside of the septum",
+						showlegend = True
+					),
+					row = 1,
+					col = 1
 				)
 				
-				fig = go.Figure(data = [trace1, trace2, trace3])
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = np.cumsum(self.data_buffer['ES_septum_anode_loss_total'].data),
+						mode = 'lines',
+						line = {
+							'color': 'green',
+							'width': 2,
+						},
+						name = "Total losses the septum",
+						showlegend = False
+					),
+					row = 1,
+					col = 2
+				)
+
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = np.cumsum(self.data_buffer['ES_septum_anode_loss_outside'].data),
+						mode = 'lines',
+						line = {
+							'color': 'red',
+							'width': 2,
+						},
+						name = "Lost outside of the septum",
+						showlegend = False
+					),
+					row = 1,
+					col = 2
+				)
+
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = np.cumsum(self.data_buffer['ES_septum_anode_loss_inside'].data),
+						mode = 'lines',
+						line = {
+							'color': 'blue',
+							'width': 2,
+						},
+						name = "Lost inside of the septum",
+						showlegend = False
+					),
+					row = 1,
+					col = 2
+				)
 				
 				fig.update_layout(
 					title = 'Es losses on the anode',
 					xaxis_title = 'Turn',
 					yaxis_title = 'Number of lost particles',
-					width = 1800,
+					width = 2250,
 					height = 400,
 				)
 				return fig
@@ -328,20 +415,146 @@ class TrackingDashboard:
 				return fig
 		
 			case 'spill':
-				fig = go.Figure(
-					data = go.Scatter(
+				fig = make_subplots(
+					rows = 1, cols = 2,
+					column_widths = [0.8, 0.2],
+					horizontal_spacing = 0.05,
+					subplot_titles = ["Spill", "Extracted"]
+				)
+
+				fig.add_trace(
+					go.Scatter(
 						x = self.data_buffer['turn'].data,
 						y = self.data_buffer['spill'].data, 
-						mode = 'lines'
-					)
+						mode = 'lines',
+						line = dict(
+							color = "blue"
+						),
+						name = "Spill"
+					),
+					row = 1, 
+					col = 1
 				)
+
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = np.cumsum(self.data_buffer['spill'].data), 
+						mode = 'lines',
+						line = dict(
+							color = "blue"
+						),
+						name = "Extracted"
+					),
+					row = 1, 
+					col = 2
+				)
+
 				fig.update_layout(
 					title = 'Spill',
 					xaxis_title = 'Turn',
-					yaxis_title = 'Number of particles in the ring',
-					width = 1800,
+					yaxis_title = 'Number of particles',
+					width = 2250,
 					height = 400,
+					showlegend = False
 				)
+				return fig
+			
+			case 'spill_mixed':
+				cumsum_c = np.cumsum(self.data_buffer['spill_C'].data)
+				cumsum_he = np.cumsum(self.data_buffer['spill_He'].data)
+				
+				spill_c = np.array(self.data_buffer['spill_C'].data)
+				spill_he = np.array(self.data_buffer['spill_He'].data)
+
+				fig = make_subplots(
+					rows = 2, cols = 2,
+					column_widths = [0.8, 0.2],
+					horizontal_spacing = 0.05,
+					subplot_titles = ["Spill", "Extracted", "Spill He/C"]
+				)
+
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = self.data_buffer['spill_C'].data, 
+						mode = 'lines',
+						line = dict(
+							color = "blue"
+						),
+						name = "Carbon",
+					),
+					row = 1,
+					col = 1
+				)
+				
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = self.data_buffer['spill_He'].data, 
+						mode = 'lines',
+						line = dict(
+							color = "red"
+						),
+						name = "Helium",
+					),
+					row = 1,
+					col = 1
+				)
+
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = cumsum_c, 
+						mode = 'lines',
+						line = dict(
+							color = "blue"
+						),
+						name = "Carbon",
+					),
+					row = 1,
+					col = 2
+				)
+
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = cumsum_he, 
+						mode = 'lines',
+						line = dict(
+							color = "red"
+						),
+						name = "Helium",
+					),
+					row = 1,
+					col = 2
+				)
+
+				fig.add_trace(
+					go.Scatter(
+						x = self.data_buffer['turn'].data,
+						y = spill_he - spill_c, 
+						mode = 'lines',
+						line = dict(
+							color = "green"
+						),
+						name = "Spill He - Spill C",
+					),
+					row = 2,
+					col = 1
+				)
+
+
+				fig.update_layout(
+					title = 'Spill mixed beam',
+					xaxis_title = 'Turn',
+					yaxis_title = 'Number of particles',
+					width = 2250,
+					height = 900,
+				)
+
+#				fig.update_yaxes(range = [-0.5, 3], row = 2, col = 1)
+
 				return fig
 			
 			case 'ES_entrance_phase_space':
@@ -551,7 +764,7 @@ class TrackingDashboard:
 		for key in self.data_to_monitor:
 			
 			# Tab 1 - Turn dependent data
-			if key in {'intensity', 'ES_septum_anode_losses', 'ES_septum_anode_losses_inside', 'ES_septum_anode_losses_outside', 'spill'}:
+			if key in {'intensity', 'ES_septum_anode_losses', 'ES_septum_anode_losses_inside', 'ES_septum_anode_losses_outside', 'spill', 'spill_mixed'}:
 				divs['turn_dependent_data'].append(html.Div([dcc.Graph(id = key)], style = {'display': 'flex', 'gap': '10px'}))
 			
 			# Tab 2 - Phase space
@@ -608,12 +821,13 @@ if __name__ == "__main__":
 	test = TrackingDashboard(
 		port = 35235, 
 		data_to_monitor = [
-#			"intensity", 
+			"intensity", 
 			"ES_septum_anode_losses",
-#			"spill", 
-#			"ES_entrance_phase_space",
+#			"spill",
+			"spill_mixed",
+			"ES_entrance_phase_space",
 #			"MS_entrance_phase_space",
-#			"separatrix"
+			"separatrix"
 		]
 	)
 	test.start_listener()
