@@ -63,6 +63,7 @@ res = tb.parse_tunes(
     r2_score_cut = 0.5,
     verbose = 2
 )
+```
 
 - Extraction dahsboard with **`toolbox.TrackingDashboard`**.
 
