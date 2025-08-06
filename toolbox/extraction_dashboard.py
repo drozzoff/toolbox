@@ -1,6 +1,7 @@
 import dash
-from dash import dcc, html, no_update
+from dash import dcc, html, no_update, MATCH
 from dash.dependencies import Output, Input, State
+from flask_compress import Compress
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import threading
@@ -13,6 +14,7 @@ from typing import Callable, Optional, Any
 from pathlib import Path
 import pandas as pd
 import time
+import datetime
 
 
 class DataBuffer:
@@ -56,7 +58,11 @@ class DataField:
 	callback: Optional[callable] = None
 	state: bool = False
 
-	plot_from: list[str] | None = None
+	plot_from: list[str] | None = None # list of the buffers that this data field is dependent upon for plotting
+
+	buffer_pointer: int = 0
+
+	plot_order: list[dict] | None = None # Description of the order traces are added to the plot
 
 class TrackingDashboard:
 	"""
@@ -68,6 +74,9 @@ class TrackingDashboard:
 		Either "particles" or "current". Default is "particles".
 		
 	"""
+
+	CHUNK_SIZE = 5000 # max number points to send
+	
 	def __init__(
 			self,
 			host: str = '127.0.0.1',
@@ -97,7 +106,15 @@ class TrackingDashboard:
 
 		self.data_fields = {
 			'intensity': DataField(
-				buffer_dependance = [self.time_coord, 'Nparticles']
+				buffer_dependance = [self.time_coord, 'Nparticles'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'Nparticles',
+						"color": "blue",
+						"label": "Intensity in the ring"
+					},
+				]
 			),
 			'ES_septum_anode_losses': DataField(
 				buffer_dependance = [self.time_coord, 'ES_septum_anode_loss_outside', 'x_extracted_at_ES', 'px_extracted_at_ES'],
@@ -118,13 +135,35 @@ class TrackingDashboard:
 				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES'], 
 				create_new_buffer = ['spill'],
 				callback = self.calculate_spill,
-				plot_from = [self.time_coord, 'spill']
+				plot_from = [self.time_coord, 'spill'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'spill',
+						"color": "blue",
+						"label": "Spill"
+					},
+				]
 			),
 			'spill_mixed': DataField(
 				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
 				create_new_buffer = ['spill_C', 'spill_He'],
 				callback = self.calculate_spill_mixed,
-				plot_from = [self.time_coord, 'spill_C', 'spill_He']
+				plot_from = [self.time_coord, 'spill_C', 'spill_He'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'spill_C',
+						"color": "blue",
+						"label": "Carbon"
+					},
+					{
+						"x": self.time_coord,
+						"y": 'spill_He',
+						"color": "red",
+						"label": "Helium"
+					},
+				]
 			),
 			'ES_entrance_phase_space': DataField(
 				buffer_dependance = ['x_extracted_at_ES', 'px_extracted_at_ES']
@@ -134,6 +173,35 @@ class TrackingDashboard:
 			),
 			'separatrix': DataField(
 				buffer_dependance = ['x_stable', 'px_stable', 'x_unstable', 'px_unstable']
+			),
+			'biomed_data': DataField(
+				buffer_dependance = [self.time_coord, 'IC1', 'IC2', 'IC3', 'nozzle'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": "IC2",
+						"color": "green",
+						"label": "IC2"
+					},
+					{
+						"x": self.time_coord,
+						"y": "nozzle",
+						"color": "red",
+						"label": "nozzle"
+					},
+					{
+						"x": self.time_coord,
+						"y": "IC1",
+						"color": "blue",
+						"label": "IC1"
+					},
+					{
+						"x": self.time_coord,
+						"y": "IC3",
+						"color": "cyan",
+						"label": "IC3"
+					},
+				]
 			)
 		}
 
@@ -141,7 +209,7 @@ class TrackingDashboard:
 
 		for data_key in self.data_to_monitor:
 			if data_key not in self.data_fields:
-				raise ValueError(f"Unsupported data requested: {data_key}. Supported data: {self.data_fields}")
+				raise ValueError(f"Unsupported data requested: {data_key}. Supported data: {self.data_fields.keys()}")
 
 			# if needed creating buffers for data to read from the user
 			for key in self.data_fields[data_key].buffer_dependance:
@@ -199,9 +267,14 @@ class TrackingDashboard:
 		self.data_buffer['spill_He'].append(sum(extracted_He))
 
 	def _clear_buffer(self):
+		# resetting the buffers in the memory
 		with self._buflock:
 			for key in self.data_buffer:
 				self.data_buffer[key].clear()
+
+		# resetting the pointers in the dependent data fields
+		for data_key in self.data_fields:
+			self.data_fields[data_key].buffer_pointer = 0	
 
 	def start_listener(self):
 
@@ -280,10 +353,8 @@ class TrackingDashboard:
 		'''
 		# if plot_from is None checking for new data in buffer_dependance
 
-		if self.data_fields[data_key].plot_from is None:
-			buffers_to_check = self.data_fields[data_key].buffer_dependance
-		else:
-			buffers_to_check = self.data_fields[data_key].plot_from
+		df = self.data_fields[data_key]
+		buffers_to_check = df.plot_from or df.buffer_dependance
 
 		print(f"Checking the buffers {buffers_to_check} for Datafield {data_key}")
 
@@ -291,8 +362,8 @@ class TrackingDashboard:
 #		print(f"\t time = {len(self.data_buffer[self.time_coord].data)}, spill = {len(self.data_buffer['spill'].data)}")
 #		print(f"\t time, new_data = {self.data_buffer[self.time_coord].new_data}, spill, new_data = {self.data_buffer['spill'].new_data}")
 
-		print(f"\t time = {len(self.data_buffer[self.time_coord].data)}, spill_C = {len(self.data_buffer['spill_C'].data)}, spill_He = {len(self.data_buffer['spill_He'].data)}")
-		print(f"\t time, new_data = {self.data_buffer[self.time_coord].new_data}, spill_C, new_data = {self.data_buffer['spill_C'].new_data}, spill_He, new_data = {self.data_buffer['spill_He'].new_data}")
+#		print(f"\t time = {len(self.data_buffer[self.time_coord].data)}, spill_C = {len(self.data_buffer['spill_C'].data)}, spill_He = {len(self.data_buffer['spill_He'].data)}")
+#		print(f"\t time, new_data = {self.data_buffer[self.time_coord].new_data}, spill_C, new_data = {self.data_buffer['spill_C'].new_data}, spill_He, new_data = {self.data_buffer['spill_He'].new_data}")
 		if not(all(res_list) or not any(res_list)):
 			raise ValueError(f"Mismatch between the incoming data for {data_key}")
 
@@ -301,16 +372,37 @@ class TrackingDashboard:
 		
 		return False
 
-	def plot_figure(self, key):
+	def prepare_data_for_stream_graph(self, data_key: str):
+		if not data_key in self.data_fields:
+			raise Exception(f"Unsupported data field name: {data_key}")
+		
+	
+
+	def plot_figure(self, key, **kwargs) -> go.Figure | None:
+
+		fig = go.Figure()
+
+		for i, tmp in enumerate(self.data_fields[key].plot_order):
+
+			x = kwargs.get(tmp['x'], [])
+			y = kwargs.get(tmp['y'], [])
+
+			if len(x) != len(y):
+				print(f"[ERROR] length missmatch between x and y for '{key}' trace id = {i}")
+				return
+			
+			fig.add_trace(go.Scatter(
+				x = x,
+				y = y,
+				mode = "lines",
+				line = dict(
+					color = tmp['color']
+				),
+				name = tmp['label']
+			))
+
 		match key:
-			case 'intensity':
-				fig = go.Figure(
-					data = go.Scatter(
-						x = self.data_buffer[self.time_coord].data,
-						y = self.data_buffer['Nparticles'].data, 
-						mode = 'lines'
-					)
-				)
+			case 'intensity': 
 				fig.update_layout(
 					title = 'Intensity',
 					xaxis_title = self.time_coord,
@@ -318,7 +410,6 @@ class TrackingDashboard:
 					width = 1800,
 					height = 400,
 				)
-				return fig
 			
 			case 'ES_septum_anode_losses':
 				
@@ -483,41 +574,6 @@ class TrackingDashboard:
 				return fig
 		
 			case 'spill':
-				fig = make_subplots(
-					rows = 1, cols = 2,
-					column_widths = [0.8, 0.2],
-					horizontal_spacing = 0.05,
-					subplot_titles = ["Spill", "Extracted"]
-				)
-
-				fig.add_trace(
-					go.Scatter(
-						x = self.data_buffer[self.time_coord].data,
-						y = self.data_buffer['spill'].data, 
-						mode = 'lines',
-						line = dict(
-							color = "blue"
-						),
-						name = "Spill"
-					),
-					row = 1, 
-					col = 1
-				)
-
-				fig.add_trace(
-					go.Scatter(
-						x = self.data_buffer[self.time_coord].data,
-						y = np.cumsum(self.data_buffer['spill'].data), 
-						mode = 'lines',
-						line = dict(
-							color = "blue"
-						),
-						name = "Extracted"
-					),
-					row = 1, 
-					col = 2
-				)
-				
 				if self.time_coord == 'time':
 					fig.update_xaxes(
 						type = "date",
@@ -534,107 +590,9 @@ class TrackingDashboard:
 					height = 400,
 					showlegend = False
 				)
-				return fig
 			
 			case 'spill_mixed':
-				t0 = time.perf_counter()
-#				cumsum_c = np.cumsum(self.data_buffer['spill_C'].data)
-#				cumsum_he = np.cumsum(self.data_buffer['spill_He'].data)
-				
-				spill_c = np.array(self.data_buffer['spill_C'].data)
-				spill_he = np.array(self.data_buffer['spill_He'].data)
-				x = self.data_buffer[self.time_coord].data
-				
 
-				print("=== DEBUG spill_mixed ===")
-				print("x length:", len(x), "sample:", x[:3])
-				print("spill_C length:", len(spill_c), "sample:", spill_c[:5])
-				print("spill_He length:", len(spill_he), "sample:", spill_he[:5])
-#				print("cumsum_C sample:", cumsum_c[:5])
-#				print("cumsum_He sample:", cumsum_he[:5])
-				print("difference sample (He-C):", (spill_he - spill_c)[:5])
-
-				fig = make_subplots(
-					rows = 2, cols = 1,
-					column_widths = [1.0],
-					horizontal_spacing = 0.05,
-					subplot_titles = ["Spill", "Spill He/C"]
-				)
-				t1 = time.perf_counter()
-
-				fig.add_trace(
-					go.Scattergl(
-						x = x,
-						y = spill_c, 
-						mode = 'lines',
-						line = dict(
-							color = "blue"
-						),
-						name = "Carbon",
-					),
-					row = 1,
-					col = 1
-				)
-				tr1 = time.perf_counter()
-
-				fig.add_trace(
-					go.Scattergl(
-						x = x,
-						y = spill_he, 
-						mode = 'lines',
-						line = dict(
-							color = "red"
-						),
-						name = "Helium",
-					),
-					row = 1,
-					col = 1
-				)
-				tr2 = time.perf_counter()
-
-#				fig.add_trace(
-#					go.Scatter(
-#						x = self.data_buffer[self.time_coord].data,
-#						y = cumsum_c, 
-#						mode = 'lines',
-#						line = dict(
-#							color = "blue"
-#						),
-#						name = "Carbon",
-#					),
-#					row = 1,
-#					col = 2
-#				)
-				tr3 = time.perf_counter()
-
-#				fig.add_trace(
-#					go.Scatter(
-#						x = self.data_buffer[self.time_coord].data,
-#						y = cumsum_he, 
-#						mode = 'lines',
-#						line = dict(
-#							color = "red"
-#						),
-#						name = "Helium",
-#					),
-#					row = 1,
-#					col = 2
-#				)
-				tr4 = time.perf_counter()
-#				fig.add_trace(
-#					go.Scatter(
-#						x = x,
-#						y = spill_he - spill_c, 
-#						mode = 'lines',
-#						line = dict(
-#							color = "green"
-#						),
-#						name = "Spill He - Spill C",
-#					),
-#					row = 2,
-#					col = 1
-#				)
-				tr5 = time.perf_counter()
 				if self.time_coord == 'time':
 					fig.update_xaxes(
 						type = "date",
@@ -650,18 +608,23 @@ class TrackingDashboard:
 					width = 2250,
 					height = 900,
 				)
-				t2 = time.perf_counter()
-				print(f"[TIMING] prep x: {(t1-t0)*1000:.1f}ms, build fig: {(t2-t1)*1000:.1f}ms")
-
-				print(f"[TIMING] trace1: {(tr1-t1)*1000:.1f}ms")
-				print(f"[TIMING] trace2: {(tr2-tr1)*1000:.1f}ms")
-				print(f"[TIMING] trace3: {(tr3-tr2)*1000:.1f}ms")
-				print(f"[TIMING] trace4: {(tr4-tr3)*1000:.1f}ms")
-				print(f"[TIMING] trace5: {(tr5-tr4)*1000:.1f}ms")
-
-#				fig.update_yaxes(range = [-0.5, 3], row = 2, col = 1)
-
-				return fig
+			
+			case 'biomed_data':
+				if self.time_coord == 'time':
+					fig.update_xaxes(
+						type = "date",
+						tickformat = "%H:%M:%S",
+						tickangle = 0,
+						showgrid = True,
+					)
+				
+				fig.update_layout(
+					title = 'Spill, biomed data',
+					xaxis_title = self.time_coord,
+					yaxis_title = 'Spill',
+					width = 2250,
+					height = 900,
+				)
 			
 			case 'ES_entrance_phase_space':
 				phase_space_fig = go.Figure(
@@ -849,12 +812,16 @@ class TrackingDashboard:
 
 				return sep_fig
 
+		return fig
+
 	def run_dash_server(self):
 		"""
 		Start a dash server
 		"""
 
 		self.app = dash.Dash("Slow extraction w/ xsuite")
+		Compress(self.app.server)
+#		self.app.server.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 		intro_text = '''
 		### SIS18 slow extraction dashboard.
@@ -865,21 +832,52 @@ class TrackingDashboard:
 		divs = {
 			'turn_dependent_data': [],
 			'phase_space': [],
-			'separatrix': []
+			'separatrix': [],
+			'special': []
 		}
 		for key in self.data_to_monitor:
 			
 			# Tab 1 - Turn dependent data
 			if key in {'intensity', 'ES_septum_anode_losses', 'ES_septum_anode_losses_inside', 'ES_septum_anode_losses_outside', 'spill', 'spill_mixed'}:
-				divs['turn_dependent_data'].append(html.Div([dcc.Graph(id = key)], style = {'display': 'flex', 'gap': '10px'}))
+				divs['turn_dependent_data'].append(
+					html.Div([
+						dcc.Graph(
+							id = {"type": "stream-graph","key": key},
+							figure = self.plot_figure(key, init_run = True)
+						)
+					], style = {'display': 'flex', 'gap': '10px'})
+				)
 			
 			# Tab 2 - Phase space
 			if key in {'ES_entrance_phase_space', 'MS_entrance_phase_space'}:
-				divs['phase_space'].append(html.Div([dcc.Graph(id = key)], style = {'display': 'flex', 'gap': '10px'}))
+				divs['phase_space'].append(
+					html.Div([
+						dcc.Graph(
+							id = {"type": "stream-graph","key": key},
+							figure = self.plot_figure(key, init_run = True)
+						)
+					], style = {'display': 'flex', 'gap': '10px'})
+				)
 			
 			# Tab 3 - Separatrix
 			if key in {'separatrix'}:
-				divs['separatrix'].append(html.Div([dcc.Graph(id = key)], style = {'display': 'flex', 'gap': '10px'}))
+				divs['separatrix'].append(
+					html.Div([
+						dcc.Graph(
+							id = {"type": "stream-graph","key": key},
+							figure = self.plot_figure(key, init_run = True)
+						)
+					], style = {'display': 'flex', 'gap': '10px'}))
+
+			if key in {'biomed_data'}:
+				divs['special'].append(
+					html.Div([
+						dcc.Graph(
+							id = {"type": "stream-graph","key": key},
+							figure = self.plot_figure(key, init_run = True)
+						)
+					], style = {'display': 'flex', 'gap': '10px'})
+				)
 
 
 		tabs = []
@@ -887,7 +885,6 @@ class TrackingDashboard:
 			if divs[key] != []:
 				tabs.append(dcc.Tab(label = key, children = divs[key]))
 
-	
 
 		self.app.layout = html.Div([
 			dcc.Markdown(children = intro_text),
@@ -899,6 +896,7 @@ class TrackingDashboard:
 						options = [
 							{"label": "Live", "value": "live"},
 							{"label": "From file", "value": "file"},
+							{"label": "Biomed", "value": "file_biomed"}
 						],
 						value = "live",
 						labelStyle = {"display": "inline-block", "margin-right": "1rem"}
@@ -943,38 +941,54 @@ class TrackingDashboard:
 			dcc.Interval(id = 'refresh', interval = 500, n_intervals = 0)
 		])
 
-		callback_outputs = [Output(x, 'figure') for x in self.data_to_monitor]
-
 		@self.app.callback(
-			callback_outputs, 
-			[
-				Input("mode-switch", "value"),
-				Input('refresh', 'n_intervals')
-			]
+			Output({"type": "stream-graph", "key": MATCH}, "extendData"),
+			Input("refresh", "n_intervals"),
+			State("mode-switch", "value"),
+			State({"type":"stream-graph", "key": MATCH}, "id"),
 		)
-		def update_graph(mode, n):
+		def stream_data(n_intervals, mode, graph_id):
+			data_key = graph_id["key"]
 
-			updates = []
+			df = self.data_fields[data_key]
+			trace_bufs = df.plot_from or df.buffer_dependance
+
+			trace_indices = []
+
+			xs, ys = [], []
+
 			with self._buflock:
-				for data_key in self.data_to_monitor:
-					print(f"Update plot for {data_key}: {self.update_figure(data_key)}")
-					if self.update_figure(data_key):
-						updates.append(self.plot_figure(data_key))
-					else:
-						updates.append(no_update)
+				ptr = df.buffer_pointer
+				total = len(self.data_buffer[trace_bufs[0]].data)
+
+				if ptr >= total:
+					return no_update
 				
-				for data_key in self.data_to_monitor:
-					if self.data_fields[data_key].plot_from is None:
-						buffers_plotted = self.data_fields[data_key].buffer_dependance
+				end = min(ptr + self.CHUNK_SIZE, total)
+
+				for i, tmp in enumerate(self.data_fields[data_key].plot_order):
+					raw_x = self.data_buffer[tmp['x']].data[ptr:end]
+
+					if raw_x and isinstance(raw_x[0], datetime.datetime):
+						x_vals = [dt.isoformat() for dt in raw_x]
 					else:
-						buffers_plotted = self.data_fields[data_key].plot_from
+						x_vals = raw_x
 
-					for key in buffers_plotted:
-						self.data_buffer[key].new_data = False
-						self.data_buffer[key].recent_data = []
+					y_vals = [float(y) for y in self.data_buffer[tmp['y']].data[ptr:end]] 
+					
+					xs.append(x_vals)
+					ys.append(y_vals)
 
-			return updates
-		
+					trace_indices.append(i)
+
+					
+				df.buffer_pointer = end
+
+			res = dict(x = xs, y = ys)
+
+			return res, trace_indices, total
+
+
 		@self.app.callback(
 			Output("xaxis-trigger", "children"),
 			Input("x-axis-choice", "value"),
@@ -1015,14 +1029,14 @@ class TrackingDashboard:
 			Input("mode-switch", "value")
 		)
 		def toggle_file_controls(mode):
-			return {"display": "block"} if mode == "file" else {"display": "none"}
+			return {"display": "block"} if mode in ["file", "file_biomed"] else {"display": "none"}
 		
 		@self.app.callback(
 			Output("file-selector", "options"),
 			Input("mode-switch", "value")
 		)
 		def list_files(mode):
-			if mode != "file":
+			if mode not in ["file", "file_biomed"]:
 				return []
 			
 			data_dir = Path("data_storage")
@@ -1057,27 +1071,52 @@ class TrackingDashboard:
 
 		@self.app.callback(
 			Output("cycle-load-trigger", "children"),
+			Input("mode-switch", "value"),
 			Input("cycle-selector", "value"),
 			State("file-selector", "value"),
 			prevent_initial_call = True
 		)
-		def on_cycle_selected(cycle_id, filepath):
+		def on_cycle_selected(mode, cycle_id, filepath):
 			if cycle_id is None:
 				return no_update
 
 			try:
-				single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
-				print(single_cycle)
+				if mode == "live":
+					return no_update
 
-				self._clear_buffer()
+				elif mode == "file":
+					""" TO MODIFY THIS PART FOR OFFLINE CHEKS OF XSUTIE TRACKING"""
+					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
+					print(single_cycle)
 
-				with self._buflock:
+					self._clear_buffer()
 
-#					self.data_buffer['spill'].extend(list(single_cycle['Y[0]'].values))
-					self.data_buffer['spill_C'].extend(list(single_cycle['Y[2]'].values))
-					self.data_buffer['spill_He'].extend(list(single_cycle['Y[3]'].values))
+					with self._buflock:
 
-					self.data_buffer['time'].extend(list(single_cycle.index.to_pydatetime()))
+						self.data_buffer['spill'].extend(list(single_cycle['Y[0]'].values))
+						self.data_buffer['spill_C'].extend(list(single_cycle['Y[2]'].values))
+						self.data_buffer['spill_He'].extend(list(single_cycle['Y[3]'].values))
+
+						#time_data = single_cycle.index
+						#print(f"time data = {time_data}")
+						self.data_buffer['time'].extend(list(single_cycle.index.to_pydatetime()))
+					
+				elif mode == "file_biomed":
+					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
+					print(single_cycle)
+
+					self._clear_buffer()
+
+					with self._buflock:
+						
+
+						self.data_buffer['nozzle'].extend(list(single_cycle['Y[1]'].values))
+						self.data_buffer['IC1'].extend(list(single_cycle['Y[0]'].values))
+						self.data_buffer['IC2'].extend(list(single_cycle['Y[2]'].values))
+						self.data_buffer['IC3'].extend(list(single_cycle['Y[3]'].values))
+
+						self.data_buffer['time'].extend(list(single_cycle.index.to_pydatetime()))
+
 
 				print(f"[INFO] Loaded cycle #{cycle_id}")
 
@@ -1105,6 +1144,5 @@ if __name__ == "__main__":
 			"separatrix"
 		]
 	)
-	#test.start_listener()
 
 	test.run_dash_server()

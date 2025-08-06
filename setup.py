@@ -8,7 +8,8 @@ DEPENDENCIES = [
 	'matplotlib',
 	'plotly',
 	'sklearn',
-	'seaborn'
+	'seaborn',
+	'flask-compress'
 ]
 
 setup(
