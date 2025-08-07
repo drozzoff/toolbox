@@ -638,34 +638,37 @@ class TrackingDashboard:
 				)
 
 				# Cathode
-				cathode_x_line = [-0.073, -0.073, -0.083, -0.083]
-				cathode_y_line = [-0.0085, -0.005, -0.005, -0.0085]
-
-				fig.add_trace(go.Scatter(
-					x = cathode_x_line,
-					y = cathode_y_line,
+				fig.add_shape(
+					type = 'line',
+					x0 = -0.073, y0 = -0.0085,
+					x1 = -0.073, y1 = -0.005,
+					x2 = -0.083, y0 = -0.005,
+					x3 = -0.083, y1 = -0.0085,
 					fill = 'toself',
 					fillcolor = 'rgba(0, 0, 255, 0.3)',
 					line = dict(color = 'rgba(0, 0, 0, 0)'),
 					name = "Cathode",
-				))
+				)
 
 				# limits on ont being lost inside of the septum
-				
 				px_loss_limit = np.linspace(-7.4e-3, -5.0e-3, 100).tolist()
 				x_loss_limit = list(map(lambda px: -0.055 - (px + 7.4e-3)**2 / (2 * 1.7857e-3), px_loss_limit))
 
-				fig.add_trace(go.Scatter(
-					x = x_loss_limit,
-					y = px_loss_limit,
-					mode = 'lines',
+				path = f'M {x_loss_limit[0]},{px_loss_limit[0]} ' + ' '.join(
+					f'L {x},{y}' for x, y in zip(x_loss_limit[1:], px_loss_limit[1:])
+				)
+
+				fig.add_shape(
+					type = 'path',
+					path = path,
 					line = dict(
 						color = 'red',
 						dash = 'dash',
+						width = 2,
 						),
 					name = "Lost inside on the wires limit",
 					showlegend = True
-				))
+				)
 
 
 				fig.update_layout(
@@ -704,19 +707,17 @@ class TrackingDashboard:
 					showlegend = True
 				)
 
-				fig.add_trace(go.Scatter(
-					x = [0.069],
-					y = [8e-3],
+				fig.add_shape(
+					x0 = 0.069, y0 = 8e-3,
 					mode = 'markers',
-					name = 'Septum centeer orbit',
 					marker = dict(
 						symbol = 'x',
 						size = 12,
 						color = 'red',
-						line = dict(width = 2)
 					),
+					name = 'Septum centeer orbit',
 					showlegend = True
-				))
+				)
 
 				fig.update_layout(
 					title = 'Phase space at MS entrance',
