@@ -345,38 +345,7 @@ class TrackingDashboard:
 		try:
 			self._listener_socket.close()
 		except Exception:
-			pass
-
-	def update_figure(self, data_key):
-		'''
-		If new data available - returns `True` to update the figure.
-		'''
-		# if plot_from is None checking for new data in buffer_dependance
-
-		df = self.data_fields[data_key]
-		buffers_to_check = df.plot_from or df.buffer_dependance
-
-		print(f"Checking the buffers {buffers_to_check} for Datafield {data_key}")
-
-		res_list = [self.data_buffer[key].new_data for key in buffers_to_check]
-#		print(f"\t time = {len(self.data_buffer[self.time_coord].data)}, spill = {len(self.data_buffer['spill'].data)}")
-#		print(f"\t time, new_data = {self.data_buffer[self.time_coord].new_data}, spill, new_data = {self.data_buffer['spill'].new_data}")
-
-#		print(f"\t time = {len(self.data_buffer[self.time_coord].data)}, spill_C = {len(self.data_buffer['spill_C'].data)}, spill_He = {len(self.data_buffer['spill_He'].data)}")
-#		print(f"\t time, new_data = {self.data_buffer[self.time_coord].new_data}, spill_C, new_data = {self.data_buffer['spill_C'].new_data}, spill_He, new_data = {self.data_buffer['spill_He'].new_data}")
-		if not(all(res_list) or not any(res_list)):
-			raise ValueError(f"Mismatch between the incoming data for {data_key}")
-
-		if all(res_list):
-			return True
-		
-		return False
-
-	def prepare_data_for_stream_graph(self, data_key: str):
-		if not data_key in self.data_fields:
-			raise Exception(f"Unsupported data field name: {data_key}")
-		
-	
+			pass	
 
 	def plot_figure(self, key, **kwargs) -> go.Figure | None:
 
@@ -821,7 +790,6 @@ class TrackingDashboard:
 
 		self.app = dash.Dash("Slow extraction w/ xsuite")
 		Compress(self.app.server)
-#		self.app.server.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 		intro_text = '''
 		### SIS18 slow extraction dashboard.
@@ -1085,21 +1053,8 @@ class TrackingDashboard:
 					return no_update
 
 				elif mode == "file":
-					""" TO MODIFY THIS PART FOR OFFLINE CHEKS OF XSUTIE TRACKING"""
-					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
-					print(single_cycle)
-
-					self._clear_buffer()
-
-					with self._buflock:
-
-						self.data_buffer['spill'].extend(list(single_cycle['Y[0]'].values))
-						self.data_buffer['spill_C'].extend(list(single_cycle['Y[2]'].values))
-						self.data_buffer['spill_He'].extend(list(single_cycle['Y[3]'].values))
-
-						#time_data = single_cycle.index
-						#print(f"time data = {time_data}")
-						self.data_buffer['time'].extend(list(single_cycle.index.to_pydatetime()))
+					# offline visualization to be included
+					pass
 					
 				elif mode == "file_biomed":
 					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
