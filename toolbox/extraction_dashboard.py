@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Any
 from pathlib import Path
 import pandas as pd
-import time
 import datetime
 
 
@@ -120,16 +119,88 @@ class TrackingDashboard:
 				buffer_dependance = [self.time_coord, 'ES_septum_anode_loss_outside', 'x_extracted_at_ES', 'px_extracted_at_ES'],
 				create_new_buffer = ['ES_septum_anode_loss_inside', 'ES_septum_anode_loss_total'],
 				callback = self.calculate_total_loss_at_septum,
-				plot_from = [self.time_coord, 'ES_septum_anode_loss_inside', 'ES_septum_anode_loss_total']
+				plot_from = [self.time_coord, 'ES_septum_anode_loss_inside', 'ES_septum_anode_loss_total', 'ES_septum_anode_loss_outside'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_total',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'color': 'green',
+								'width': 2,
+							},
+							name = "Total losses the septum",
+							showlegend = True
+						)
+					},
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_outside',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'color': 'red',
+								'width': 2,
+							},
+							name = "Lost outside of the septum",
+							showlegend = True
+						)
+					},
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_inside',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'color': 'blue',
+								'width': 2,
+							},
+							name = "Lost inside of the septum",
+							showlegend = True
+						)
+					}
+
+				]
 			),	
 			'ES_septum_anode_losses_outside': DataField(
-				buffer_dependance = [self.time_coord, 'ES_septum_anode_loss_outside']
+				buffer_dependance = [self.time_coord, 'ES_septum_anode_loss_outside'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_outside',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'color': 'blue',
+								'width': 2,
+							},
+							name = "Lost outside of the septum",
+							showlegend = True
+						)
+					}
+				]
 			),
 			'ES_septum_anode_losses_inside': DataField(
 				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES'],
 				create_new_buffer = ['ES_septum_anode_loss_inside'],
 				callback = self.calculate_loss_inside_septum,
-				plot_from = [self.time_coord, 'ES_septum_anode_loss_inside']
+				plot_from = [self.time_coord, 'ES_septum_anode_loss_inside'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_inside',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'color': 'blue',
+								'width': 2,
+							},
+							name = "Lost inside of the septum",
+							showlegend = True
+						)
+					}
+				]
 			),
 			'spill': DataField(
 				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES'], 
@@ -140,8 +211,13 @@ class TrackingDashboard:
 					{
 						"x": self.time_coord,
 						"y": 'spill',
-						"color": "blue",
-						"label": "Spill"
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "blue"
+							),
+							name = "Spill"
+						)
 					},
 				]
 			),
@@ -154,25 +230,93 @@ class TrackingDashboard:
 					{
 						"x": self.time_coord,
 						"y": 'spill_C',
-						"color": "blue",
-						"label": "Carbon"
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "blue"
+							),
+							name = "Carbon"
+						)
 					},
 					{
 						"x": self.time_coord,
 						"y": 'spill_He',
-						"color": "red",
-						"label": "Helium"
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "red"
+							),
+							name = "Helium"
+						)
 					},
 				]
 			),
 			'ES_entrance_phase_space': DataField(
-				buffer_dependance = ['x_extracted_at_ES', 'px_extracted_at_ES']
+				buffer_dependance = ['x_extracted_at_ES', 'px_extracted_at_ES'],
+				plot_order = [
+					{
+						"x": 'x_extracted_at_ES',
+						"y": 'px_extracted_at_ES',
+						"settings": dict(
+							mode = 'markers',
+							marker = dict(
+								size = 5,
+								color = 'black',
+								opacity = 0.3
+							),
+							name = "Extracted particles"
+						)
+					}
+				]
 			),
 			'MS_entrance_phase_space': DataField(
-				buffer_dependance = ['x_extracted_at_MS', 'px_extracted_at_MS']
+				buffer_dependance = ['x_extracted_at_MS', 'px_extracted_at_MS'],
+				plot_order = [
+					{
+						"x": 'x_extracted_at_MS',
+						"y": 'px_extracted_at_MS',
+						"settings": dict(
+							mode = 'markers',
+							marker = dict(
+								size = 5,
+								color = 'black',
+								opacity = 0.3
+							),
+							name = "Extracted particles"
+						)
+					}
+				]
 			),
 			'separatrix': DataField(
-				buffer_dependance = ['x_stable', 'px_stable', 'x_unstable', 'px_unstable']
+				buffer_dependance = ['x_stable', 'px_stable', 'x_unstable', 'px_unstable'],
+				plot_order = [
+					{
+						"x": 'x_unstable',
+						"px": 'px_unstable',
+						"settings": dict(
+							mode = 'markers',
+							marker = dict(
+								size = 5,
+								color = 'red',
+							),
+							name = "Unstable particle",
+							showlegend = True
+						)
+					},
+					{
+						"x": 'x_stable',
+						"px": 'px_stable',
+						"settings": dict(
+							mode = 'markers',
+							marker = dict(
+								size = 5,
+								color = 'green',
+							),
+							name = "Stable particle",
+							showlegend = True
+						)
+					}
+				]
 			),
 			'biomed_data': DataField(
 				buffer_dependance = [self.time_coord, 'IC1', 'IC2', 'IC3', 'nozzle'],
@@ -180,26 +324,46 @@ class TrackingDashboard:
 					{
 						"x": self.time_coord,
 						"y": "IC2",
-						"color": "green",
-						"label": "IC2"
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "green",
+							),
+							name = "IC2"
+						)
 					},
 					{
 						"x": self.time_coord,
 						"y": "nozzle",
-						"color": "red",
-						"label": "nozzle"
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "red",
+							),
+							name = "nozzle"
+						)
 					},
 					{
 						"x": self.time_coord,
 						"y": "IC1",
-						"color": "blue",
-						"label": "IC1"
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "blue",
+							),
+							name = "IC1"
+						)
 					},
 					{
 						"x": self.time_coord,
 						"y": "IC3",
-						"color": "cyan",
-						"label": "IC3"
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color =  "cyan",
+							),
+							name = "IC3"
+						)
 					},
 				]
 			)
@@ -351,7 +515,9 @@ class TrackingDashboard:
 
 		fig = go.Figure()
 
-		for i, tmp in enumerate(self.data_fields[key].plot_order):
+		figure_config = self.data_fields[key].plot_order
+		
+		for i, tmp in enumerate(figure_config):
 
 			x = kwargs.get(tmp['x'], [])
 			y = kwargs.get(tmp['y'], [])
@@ -363,11 +529,7 @@ class TrackingDashboard:
 			fig.add_trace(go.Scatter(
 				x = x,
 				y = y,
-				mode = "lines",
-				line = dict(
-					color = tmp['color']
-				),
-				name = tmp['label']
+				**tmp['settings']
 			))
 
 		match key:
@@ -381,134 +543,15 @@ class TrackingDashboard:
 				)
 			
 			case 'ES_septum_anode_losses':
-				
-				fig = make_subplots(
-					rows = 1, cols = 2,
-					column_widths = [0.8, 0.2],
-					horizontal_spacing = 0.05,
-					subplot_titles = ["Losses the septum", "Accumulated loss"]
-				)
-
-				fig.add_trace(
-					go.Scatter(
-						x = self.data_buffer[self.time_coord].data,
-						y = self.data_buffer['ES_septum_anode_loss_total'].data,
-						mode = 'lines',
-						line = {
-							'color': 'green',
-							'width': 2,
-						},
-						name = "Total losses the septum",
-						showlegend = True
-					),
-					row = 1,
-					col = 1
-				)
-
-				fig.add_trace(
-					go.Scatter(
-						x = self.data_buffer[self.time_coord].data,
-						y = self.data_buffer['ES_septum_anode_loss_outside'].data,
-						mode = 'lines',
-						line = {
-							'color': 'red',
-							'width': 2,
-						},
-						name = "Lost outside of the septum",
-						showlegend = True
-					),
-					row = 1,
-					col = 1
-				)
-				
-				fig.add_trace(
-					go.Scatter(
-						x = self.data_buffer[self.time_coord].data,
-						y = self.data_buffer['ES_septum_anode_loss_inside'].data,
-						mode = 'lines',
-						line = {
-							'color': 'blue',
-							'width': 2,
-						},
-						name = "Lost inside of the septum",
-						showlegend = True
-					),
-					row = 1,
-					col = 1
-				)
-				
-				fig.add_trace(
-					go.Scatter(
-						x = self.data_buffer[self.time_coord].data,
-						y = np.cumsum(self.data_buffer['ES_septum_anode_loss_total'].data),
-						mode = 'lines',
-						line = {
-							'color': 'green',
-							'width': 2,
-						},
-						name = "Total losses the septum",
-						showlegend = False
-					),
-					row = 1,
-					col = 2
-				)
-
-				fig.add_trace(
-					go.Scatter(
-						x = self.data_buffer[self.time_coord].data,
-						y = np.cumsum(self.data_buffer['ES_septum_anode_loss_outside'].data),
-						mode = 'lines',
-						line = {
-							'color': 'red',
-							'width': 2,
-						},
-						name = "Lost outside of the septum",
-						showlegend = False
-					),
-					row = 1,
-					col = 2
-				)
-
-				fig.add_trace(
-					go.Scatter(
-						x = self.data_buffer[self.time_coord].data,
-						y = np.cumsum(self.data_buffer['ES_septum_anode_loss_inside'].data),
-						mode = 'lines',
-						line = {
-							'color': 'blue',
-							'width': 2,
-						},
-						name = "Lost inside of the septum",
-						showlegend = False
-					),
-					row = 1,
-					col = 2
-				)
-				
 				fig.update_layout(
 					title = 'Es losses on the anode',
 					xaxis_title = self.time_coord,
 					yaxis_title = 'Lost [a.u.]',
-					width = 2250,
+					width = 1800,
 					height = 400,
 				)
-				return fig
 			
-			case 'ES_septum_anode_losses_inside':
-				trace = go.Scatter(
-					x = self.data_buffer[self.time_coord].data,
-					y = self.data_buffer['ES_septum_anode_loss_inside'].data,
-					mode = 'lines',
-					line = {
-						'color': 'blue',
-						'width': 2,
-					},
-					name = "Lost inside of the septum",
-					showlegend = True
-				)
-				
-				fig = go.Figure(data = [trace])
-				
+			case 'ES_septum_anode_losses_inside':			
 				fig.update_layout(
 					title = 'Es losses on the inside of anode',
 					xaxis_title = self.time_coord,
@@ -516,23 +559,8 @@ class TrackingDashboard:
 					width = 1800,
 					height = 400,
 				)
-				return fig
 			
-			case 'ES_septum_anode_losses_outside':
-				trace = go.Scatter(
-					x = self.data_buffer[self.time_coord].data,
-					y = self.data_buffer['ES_septum_anode_loss_outside'].data,
-					mode = 'lines',
-					line = {
-						'color': 'blue',
-						'width': 2,
-					},
-					name = "Lost outside of the septum",
-					showlegend = True
-				)
-				
-				fig = go.Figure(data = [trace])
-				
+			case 'ES_septum_anode_losses_outside':			
 				fig.update_layout(
 					title = 'Es losses on the outside of anode',
 					xaxis_title = self.time_coord,
@@ -540,7 +568,6 @@ class TrackingDashboard:
 					width = 1800,
 					height = 400,
 				)
-				return fig
 		
 			case 'spill':
 				if self.time_coord == 'time':
@@ -596,22 +623,8 @@ class TrackingDashboard:
 				)
 			
 			case 'ES_entrance_phase_space':
-				phase_space_fig = go.Figure(
-					data = go.Scatter(
-						x = self.data_buffer['x_extracted_at_ES'].data, 
-						y = self.data_buffer['px_extracted_at_ES'].data, 
-						mode = 'markers',
-						marker = dict(
-							size = 5,
-							color = 'black',
-							opacity = 0.3
-						),
-						name = "Extracted particles"
-					)
-				)
-
 				# Anode
-				phase_space_fig.add_shape(
+				fig.add_shape(
 					type = 'line',
 					x0 = -0.055, y0 = -0.0085,
 					x1 = -0.055, y1 = -0.005,
@@ -628,7 +641,7 @@ class TrackingDashboard:
 				cathode_x_line = [-0.073, -0.073, -0.083, -0.083]
 				cathode_y_line = [-0.0085, -0.005, -0.005, -0.0085]
 
-				phase_space_fig.add_trace(go.Scatter(
+				fig.add_trace(go.Scatter(
 					x = cathode_x_line,
 					y = cathode_y_line,
 					fill = 'toself',
@@ -642,7 +655,7 @@ class TrackingDashboard:
 				px_loss_limit = np.linspace(-7.4e-3, -5.0e-3, 100).tolist()
 				x_loss_limit = list(map(lambda px: -0.055 - (px + 7.4e-3)**2 / (2 * 1.7857e-3), px_loss_limit))
 
-				phase_space_fig.add_trace(go.Scatter(
+				fig.add_trace(go.Scatter(
 					x = x_loss_limit,
 					y = px_loss_limit,
 					mode = 'lines',
@@ -655,7 +668,7 @@ class TrackingDashboard:
 				))
 
 
-				phase_space_fig.update_layout(
+				fig.update_layout(
 					title = 'Phase space at ES entrance',
 					width = 800,
 					height = 700,
@@ -663,24 +676,9 @@ class TrackingDashboard:
 					yaxis_title = 'px [rad]',
 					showlegend = True
 				)
-				return phase_space_fig
 			
 			case 'MS_entrance_phase_space':
-				phase_space_fig = go.Figure(
-					data = go.Scatter(
-						x = self.data_buffer['x_extracted_at_MS'].data, 
-						y = self.data_buffer['px_extracted_at_MS'].data, 
-						mode = 'markers',
-						marker = dict(
-							size = 5,
-							color = 'black',
-							opacity = 0.3
-						),
-						name = "Extracted particles"
-					)
-				)
-
-				phase_space_fig.add_shape(
+				fig.add_shape(
 					type = 'line',
 					x0 = 0.038, y0 = 0.003,
 					x1 = 0.038, y1 = 0.009,
@@ -693,7 +691,7 @@ class TrackingDashboard:
 					showlegend = True
 				)
 
-				phase_space_fig.add_shape(
+				fig.add_shape(
 					type = 'line',
 					x0 = 0.1, y0 = 0.003,
 					x1 = 0.1, y1 = 0.009,
@@ -706,7 +704,7 @@ class TrackingDashboard:
 					showlegend = True
 				)
 
-				phase_space_fig.add_trace(go.Scatter(
+				fig.add_trace(go.Scatter(
 					x = [0.069],
 					y = [8e-3],
 					mode = 'markers',
@@ -720,7 +718,7 @@ class TrackingDashboard:
 					showlegend = True
 				))
 
-				phase_space_fig.update_layout(
+				fig.update_layout(
 					title = 'Phase space at MS entrance',
 					width = 800,
 					height = 700,
@@ -728,36 +726,9 @@ class TrackingDashboard:
 					yaxis_title = 'px [rad]',
 					showlegend = True
 				)
-				return phase_space_fig
 
 			case 'separatrix':
-				trace1 = go.Scatter(
-					x = self.data_buffer['x_unstable'].data,
-					y = self.data_buffer['px_unstable'].data,
-					mode = 'markers',
-					marker = dict(
-						size = 5,
-						color = 'red',
-					),
-					name = "Unstable particle",
-					showlegend = True
-				)
-
-				trace2 = go.Scatter(
-					x = self.data_buffer['x_stable'].data,
-					y = self.data_buffer['px_stable'].data,
-					mode = 'markers',
-					marker = dict(
-						size = 5,
-						color = 'green',
-					),
-					name = "Stable particle",
-					showlegend = True
-				)
-				
-				sep_fig = go.Figure(data = [trace1, trace2])
-
-				sep_fig.add_shape(
+				fig.add_shape(
 					type = 'line',
 					x0 = -0.055, y0 = -0.0085,
 					x1 = -0.055, y1 = 0.005,
@@ -770,7 +741,7 @@ class TrackingDashboard:
 					showlegend = True
 				)
 
-				sep_fig.update_layout(
+				fig.update_layout(
 					title = 'Separatrix',
 					width = 1000,
 					height = 800,
@@ -778,8 +749,6 @@ class TrackingDashboard:
 					yaxis_title = 'px [rad]',
 					showlegend = True
 				)
-
-				return sep_fig
 
 		return fig
 
