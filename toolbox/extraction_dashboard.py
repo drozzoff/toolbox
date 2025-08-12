@@ -130,7 +130,7 @@ class TrackingDashboard:
 								'color': 'green',
 								'width': 2,
 							},
-							name = "Total losses the septum",
+							name = "Total losses the septumS",
 							showlegend = True
 						)
 					},
@@ -319,28 +319,28 @@ class TrackingDashboard:
 				]
 			),
 			'biomed_data': DataField(
-				buffer_dependance = [self.time_coord, 'IC1', 'IC2', 'IC3', 'nozzle'],
+				buffer_dependance = [self.time_coord, 'IC1', 'IC2', 'IC3'],
 				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": "IC3",
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "green",
+							),
+							name = "IC3"
+						)
+					},
 					{
 						"x": self.time_coord,
 						"y": "IC2",
 						"settings": dict(
 							mode = "lines",
 							line = dict(
-								color = "green",
-							),
-							name = "IC2"
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": "nozzle",
-						"settings": dict(
-							mode = "lines",
-							line = dict(
 								color = "red",
 							),
-							name = "nozzle"
+							name = "IC2"
 						)
 					},
 					{
@@ -349,20 +349,9 @@ class TrackingDashboard:
 						"settings": dict(
 							mode = "lines",
 							line = dict(
-								color = "blue",
+								color =  "blue",
 							),
 							name = "IC1"
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": "IC3",
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color =  "cyan",
-							),
-							name = "IC3"
 						)
 					},
 				]
@@ -642,8 +631,8 @@ class TrackingDashboard:
 					type = 'line',
 					x0 = -0.073, y0 = -0.0085,
 					x1 = -0.073, y1 = -0.005,
-					x2 = -0.083, y0 = -0.005,
-					x3 = -0.083, y1 = -0.0085,
+					x2 = -0.083, y2 = -0.005,
+					x3 = -0.083, y3 = -0.0085,
 					fill = 'toself',
 					fillcolor = 'rgba(0, 0, 255, 0.3)',
 					line = dict(color = 'rgba(0, 0, 0, 0)'),
@@ -876,7 +865,7 @@ class TrackingDashboard:
 			], id = "file-controls", style = {"display": "none"}),
 			html.Div(id = "listener-trigger", style = {"display": "none"}),
 			dcc.Tabs(tabs),
-			dcc.Interval(id = 'refresh', interval = 500, n_intervals = 0)
+			dcc.Interval(id = 'refresh', interval = 200, n_intervals = 0)
 		])
 
 		@self.app.callback(
@@ -1034,11 +1023,9 @@ class TrackingDashboard:
 
 					with self._buflock:
 						
-
-						self.data_buffer['nozzle'].extend(list(single_cycle['Y[1]'].values))
 						self.data_buffer['IC1'].extend(list(single_cycle['Y[0]'].values))
-						self.data_buffer['IC2'].extend(list(single_cycle['Y[2]'].values))
-						self.data_buffer['IC3'].extend(list(single_cycle['Y[3]'].values))
+						self.data_buffer['IC2'].extend(list(single_cycle['Y[1]'].values))
+						self.data_buffer['IC3'].extend(list(single_cycle['Y[2]'].values))
 
 						self.data_buffer['time'].extend(list(single_cycle.index.to_pydatetime()))
 
