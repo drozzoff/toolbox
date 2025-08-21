@@ -292,7 +292,7 @@ class TrackingDashboard:
 				plot_order = [
 					{
 						"x": 'x_unstable',
-						"px": 'px_unstable',
+						"y": 'px_unstable',
 						"settings": dict(
 							mode = 'markers',
 							marker = dict(
@@ -305,7 +305,7 @@ class TrackingDashboard:
 					},
 					{
 						"x": 'x_stable',
-						"px": 'px_stable',
+						"y": 'px_stable',
 						"settings": dict(
 							mode = 'markers',
 							marker = dict(
@@ -628,12 +628,8 @@ class TrackingDashboard:
 
 				# Cathode
 				fig.add_shape(
-					type = 'line',
-					x0 = -0.073, y0 = -0.0085,
-					x1 = -0.073, y1 = -0.005,
-					x2 = -0.083, y2 = -0.005,
-					x3 = -0.083, y3 = -0.0085,
-					fill = 'toself',
+					type = 'path',
+					path = 'M -0.073 -0.0085 L -0.073 -0.005 L -0.083 -0.005 L -0.083 -0.0085 Z',
 					fillcolor = 'rgba(0, 0, 255, 0.3)',
 					line = dict(color = 'rgba(0, 0, 0, 0)'),
 					name = "Cathode",
