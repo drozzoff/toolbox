@@ -110,8 +110,12 @@ class TrackingDashboard:
 					{
 						"x": self.time_coord,
 						"y": 'Nparticles',
-						"color": "blue",
-						"label": "Intensity in the ring"
+						"settings": dict(
+							mode = "lines",
+							line = {"color": "blue"},
+							name = "Intensity in the ring",
+							showlegend = True
+						)
 					},
 				]
 			),
@@ -221,6 +225,25 @@ class TrackingDashboard:
 					},
 				]
 			),
+			'spill_accumulated': DataField(
+				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES'], 
+				create_new_buffer = ['spill_accumulated'],
+				callback = self.calcualte_spill_accumulated,
+				plot_from = [self.time_coord, 'spill_accumulated'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'spill_accumulated',
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "blue"
+							),
+							name = "Spill"
+						)
+					},
+				]
+			),
 			'spill_mixed': DataField(
 				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
 				create_new_buffer = ['spill_C', 'spill_He'],
@@ -247,6 +270,55 @@ class TrackingDashboard:
 								color = "red"
 							),
 							name = "Helium"
+						)
+					},
+				]
+			),
+			'spill_mixed_accumulated': DataField(
+				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
+				create_new_buffer = ['spill_C_accumulated', 'spill_He_accumulated'],
+				callback = self.calculate_spill_mixed_accumulated,
+				plot_from = [self.time_coord, 'spill_C_accumulated', 'spill_He_accumulated'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'spill_C_accumulated',
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "blue"
+							),
+							name = "Carbon"
+						)
+					},
+					{
+						"x": self.time_coord,
+						"y": 'spill_He_accumulated',
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "red"
+							),
+							name = "Helium"
+						)
+					},
+				]
+			),
+			'spill_mixed_diff_accumulated': DataField(
+				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
+				create_new_buffer = ['spill_C_accumulated', 'spill_He_accumulated'],
+				callback = self.calculate_spill_mixed_diff_accumulated,
+				plot_from = [self.time_coord, 'C_He_difference_accumulated'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'C_He_difference_accumulated',
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "green"
+							),
+							name = "Carbon - Helium"
 						)
 					},
 				]
@@ -405,6 +477,14 @@ class TrackingDashboard:
 #		print(f"Extracted = {extracted}, Lost inside = {lost_inside}")
 		self.data_buffer['spill'].append(extracted - lost_inside)
 
+	def calcualte_spill_accumulated(self):
+		extracted = len(self.data_buffer['x_extracted_at_ES'].recent_data)
+		lost_inside = sum(self.calculate_loss_inside_septum(append_to_buffer = False))
+
+		spill_prev = self.data_buffer['spill_accumulated'].data[-1] if self.data_buffer['spill_accumulated'].data[-1] else 0
+
+		self.data_buffer['spill_accumulated'].append(extracted - lost_inside + spill_prev)
+		
 	def calculate_spill_mixed(self):
 		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
 
@@ -418,6 +498,38 @@ class TrackingDashboard:
 
 		self.data_buffer['spill_C'].append(sum(extracted_C))
 		self.data_buffer['spill_He'].append(sum(extracted_He))
+	
+	def calculate_spill_mixed_accumulated(self):
+		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
+
+		# separating Carbon from Helium
+		ion = np.array(self.data_buffer['ion'].recent_data)
+		is_C = ion == "carbon"
+		is_He = ion == "helium"
+
+		extracted_C = is_C & ~lost_inside
+		extracted_He = is_He & ~lost_inside
+
+		spill_C_prev = self.data_buffer['spill_C_accumulated'].data[-1] if self.data_buffer['spill_C_accumulated'].data else 0
+		spill_He_prev = self.data_buffer['spill_He_accumulated'].data[-1] if self.data_buffer['spill_He_accumulated'].data else 0
+
+		self.data_buffer['spill_C_accumulated'].append(sum(extracted_C) + spill_C_prev)
+		self.data_buffer['spill_He_accumulated'].append(sum(extracted_He) + spill_He_prev)
+
+	def calculate_spill_mixed_diff_accumulated(self):
+		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
+
+		# separating Carbon from Helium
+		ion = np.array(self.data_buffer['ion'].recent_data)
+		is_C = ion == "carbon"
+		is_He = ion == "helium"
+
+		extracted_C = is_C & ~lost_inside
+		extracted_He = is_He & ~lost_inside
+
+		diff_prev = self.data_buffer['C_He_difference_accumulated'].data[-1] if self.data_buffer['C_He_difference_accumulated'].data else 0
+
+		self.data_buffer['C_He_difference_accumulated'].append(extracted_C - extracted_He + diff_prev)
 
 	def _clear_buffer(self):
 		# resetting the buffers in the memory
@@ -576,6 +688,24 @@ class TrackingDashboard:
 					showlegend = False
 				)
 			
+			case 'spill_accumulated':
+				if self.time_coord == 'time':
+					fig.update_xaxes(
+						type = "date",
+						tickformat = "%H:%M:%S",
+						tickangle = 0,
+						showgrid = True,
+					)
+
+				fig.update_layout(
+					title = 'Spill accumulated',
+					xaxis_title = self.time_coord,
+					yaxis_title = 'Spill [a.u.]',
+					width = 1200,
+					height = 700,
+					showlegend = False
+				)
+			
 			case 'spill_mixed':
 
 				if self.time_coord == 'time':
@@ -587,11 +717,46 @@ class TrackingDashboard:
 					)
 				
 				fig.update_layout(
-					title = 'Spill mixed beam',
+					title = 'Spill, mixed beam',
 					xaxis_title = self.time_coord,
 					yaxis_title = 'Spill',
 					width = 2250,
 					height = 900,
+				)
+
+			case 'spill_mixed_accumulated':
+
+				if self.time_coord == 'time':
+					fig.update_xaxes(
+						type = "date",
+						tickformat = "%H:%M:%S",
+						tickangle = 0,
+						showgrid = True,
+					)
+				
+				fig.update_layout(
+					title = 'Accumulated spill, mixed beam',
+					xaxis_title = self.time_coord,
+					yaxis_title = 'Spill',
+					width = 1200,
+					height = 700,
+				)
+			
+			case 'spill_mixed_diff_accumulated':
+				if self.time_coord == 'time':
+					fig.update_xaxes(
+						type = "date",
+						tickformat = "%H:%M:%S",
+						tickangle = 0,
+						showgrid = True,
+					)
+				
+				fig.update_layout(
+					title = 'Extracted C and He difference, mixed beam',
+					xaxis_title = self.time_coord,
+					yaxis_title = 'Spill',
+					width = 1200,
+					height = 700,
 				)
 			
 			case 'biomed_data':
@@ -761,7 +926,7 @@ class TrackingDashboard:
 		for key in self.data_to_monitor:
 			
 			# Tab 1 - Turn dependent data
-			if key in {'intensity', 'ES_septum_anode_losses', 'ES_septum_anode_losses_inside', 'ES_septum_anode_losses_outside', 'spill', 'spill_mixed'}:
+			if key in {'intensity', 'ES_septum_anode_losses', 'ES_septum_anode_losses_inside', 'ES_septum_anode_losses_outside', 'spill', 'spill_mixed', 'spill_accumulated', 'spill_mixed_accumulated', 'spill_mixed_diff_accumulated'}:
 				divs['turn_dependent_data'].append(
 					html.Div([
 						dcc.Graph(
