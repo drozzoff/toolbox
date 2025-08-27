@@ -306,7 +306,7 @@ class TrackingDashboard:
 			),
 			'spill_mixed_diff_accumulated': DataField(
 				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
-				create_new_buffer = ['spill_C_accumulated', 'spill_He_accumulated'],
+				create_new_buffer = ['C_He_difference_accumulated'],
 				callback = self.calculate_spill_mixed_diff_accumulated,
 				plot_from = [self.time_coord, 'C_He_difference_accumulated'],
 				plot_order = [
@@ -481,7 +481,7 @@ class TrackingDashboard:
 		extracted = len(self.data_buffer['x_extracted_at_ES'].recent_data)
 		lost_inside = sum(self.calculate_loss_inside_septum(append_to_buffer = False))
 
-		spill_prev = self.data_buffer['spill_accumulated'].data[-1] if self.data_buffer['spill_accumulated'].data[-1] else 0
+		spill_prev = self.data_buffer['spill_accumulated'].data[-1] if self.data_buffer['spill_accumulated'].data else 0
 
 		self.data_buffer['spill_accumulated'].append(extracted - lost_inside + spill_prev)
 		
@@ -527,9 +527,14 @@ class TrackingDashboard:
 		extracted_C = is_C & ~lost_inside
 		extracted_He = is_He & ~lost_inside
 
+#		print(f"Extracted C {extracted_C}")
+#		print(f"Extracted He {extracted_He}")
+		
 		diff_prev = self.data_buffer['C_He_difference_accumulated'].data[-1] if self.data_buffer['C_He_difference_accumulated'].data else 0
 
-		self.data_buffer['C_He_difference_accumulated'].append(extracted_C - extracted_He + diff_prev)
+#		print(f"diff_prev = {diff_prev} \n")
+
+		self.data_buffer['C_He_difference_accumulated'].append(sum(extracted_C) - sum(extracted_He) + diff_prev)
 
 	def _clear_buffer(self):
 		# resetting the buffers in the memory
@@ -908,7 +913,7 @@ class TrackingDashboard:
 		Start a dash server
 		"""
 
-		self.app = dash.Dash("Slow extraction w/ xsuite")
+		self.app = dash.Dash("Slow extraction w/ xsuite", title = "Extraction dashboard")
 		Compress(self.app.server)
 
 		intro_text = '''
