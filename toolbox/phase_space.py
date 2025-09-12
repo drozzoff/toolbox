@@ -68,7 +68,17 @@ def stable_particle_id(line: Line, particles: Particles, n_particles: int, **kwa
 
 
 
-def get_stable_limit(line: Line, ion: dict, test_range: List[float], ex_norm: float, n_particles: int, num_turns: int, precision = 1e-6, **kwargs):
+def get_stable_limit(
+		line: Line, 
+		ion: dict, 
+		test_range: List[float], 
+		ex_norm: float, 
+		n_particles: int, 
+		num_turns: int, 
+		precision: float = 1e-6, 
+		**kwargs
+	):
+
 	"""
 	Find a stable region of a given line.
 
@@ -176,6 +186,59 @@ def get_stable_limit(line: Line, ion: dict, test_range: List[float], ex_norm: fl
 		progress.close()
 		
 	return test_range, iterations_data
+
+def get_stable_and_unstable_particle(
+		line: Line, 
+		ion: dict,
+		ex_norm: float,  
+		delta: float,
+		calculation_settings: dict,
+		**kwargs
+	) -> tuple[tuple[Particles, Particles], dict]:
+
+	res, iteration_data = get_stable_limit(
+		line = line, 
+		ion = ion, 
+		ex_norm = ex_norm,
+		delta = delta,
+		with_progress = True if kwargs.get('verbose', 0) > 0 else False,
+		debug = True if kwargs.get('verbose', 0) > 1 else False,
+		**calculation_settings
+	)
+	
+	# res contains the normalized coordinates in sigma of stable and unstable particles
+
+	tmp = line.build_particles(
+		x_norm = res,
+		nemitt_x = ex_norm,
+		mode = "normalized_transverse",
+		method = "4d"
+	)
+
+	stable_particle = Particles(
+		mass0 = line.particle_ref.mass0, 
+		q0 = line.particle_ref.q0,
+		gamma0 = line.particle_ref.gamma0,
+		mass_ratio = ion['mass'] / line.particle_ref.mass0,
+		charge_ratio = ion['charge'] / line.particle_ref.q0,
+		x = tmp.x[1],
+		px = tmp.px[1],
+		delta = delta
+	)
+
+	unstable_particle = Particles(
+		mass0 = line.particle_ref.mass0,
+		q0 = line.particle_ref.q0,
+		gamma0 = line.particle_ref.gamma0,
+		mass_ratio = ion['mass'] / line.particle_ref.mass0,
+		charge_ratio = ion['charge'] / line.particle_ref.q0,
+		x = tmp.x[0],
+		px = tmp.px[0],
+		delta = delta
+	)
+
+	return (stable_particle, unstable_particle), iteration_data
+
 
 def get_phase_portrait2d(monitor: ParticlesMonitor, particles: Particles, at_turn: int, plane: str = 'x') -> DataFrame:
 	"""

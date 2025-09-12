@@ -189,7 +189,6 @@ def set_sis18ring(
 
 	# Dipoles sextupolar components
 	if k2l_bends is not None:
-		print()
 		bends, __ = sis18ring.get_elements_of_type(xt.Bend)
 		for bend in bends:
 			# it is devided by 2 because all the bends are split into 2
@@ -197,10 +196,10 @@ def set_sis18ring(
 			bend.knl[2] = k2l_bends / 2
 
 	# default setting
-	with open("files/settings/3rd_int_resonance_dist_0037.json", 'r') as f:
-		quads_settings = json.load(f)
-		for key in quads_settings:
-			sis18ring[key] = quads_settings[key]
+#	with open("files/settings/3rd_int_resonance_dist_0037.json", 'r') as f:
+#		quads_settings = json.load(f)
+#		for key in quads_settings:
+#			sis18ring[key] = quads_settings[key]
 
 	if qx is not None or qy is not None:
 		# setting a working point

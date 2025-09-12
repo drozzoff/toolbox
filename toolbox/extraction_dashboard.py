@@ -166,7 +166,188 @@ class TrackingDashboard:
 					}
 
 				]
-			),	
+			),
+			'ES_septum_anode_losses_accumulated': DataField(
+				buffer_dependance = [self.time_coord, 'ES_septum_anode_loss_outside', 'x_extracted_at_ES', 'px_extracted_at_ES'],
+				create_new_buffer = ['ES_septum_anode_loss_outside_accumulated', 'ES_septum_anode_loss_inside_accumulated', 'ES_septum_anode_loss_total_accumulated'],
+				callback = self.calculate_total_accumulated_loss_at_septum,
+				plot_from = [self.time_coord, 'ES_septum_anode_loss_outside_accumulated', 'ES_septum_anode_loss_inside_accumulated', 'ES_septum_anode_loss_total_accumulated'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_total_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'color': 'green',
+								'width': 2,
+							},
+							name = "Total losses",
+							showlegend = True
+						)
+					},
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_outside_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'color': 'red',
+								'width': 2,
+							},
+							name = "Lost outside",
+							showlegend = True
+						)
+					},
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_inside_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'color': 'blue',
+								'width': 2,
+							},
+							name = "Lost inside",
+							showlegend = True
+						)
+					}
+
+				]
+			),
+			'ES_septum_anode_losses_mixed_accumulated': DataField(
+				buffer_dependance = [
+					self.time_coord, 
+					'ES_septum_anode_loss_outside_C', 
+					'ES_septum_anode_loss_outside_He', 
+					'x_extracted_at_ES', 
+					'px_extracted_at_ES'
+				],
+				create_new_buffer = [
+					'ES_septum_anode_loss_outside_C_accumulated',
+					'ES_septum_anode_loss_outside_He_accumulated',
+					'ES_septum_anode_loss_inside_C_accumulated',
+					'ES_septum_anode_loss_inside_He_accumulated',
+					'ES_septum_anode_loss_total_C_accumulated',
+					'ES_septum_anode_loss_total_He_accumulated',
+					'ES_septum_anode_loss_total_accumulated'
+				],
+				callback = self.calculate_total_accumulated_loss_at_septum_mixed,
+				plot_from = [
+					self.time_coord, 
+					'ES_septum_anode_loss_outside_C_accumulated',
+					'ES_septum_anode_loss_outside_He_accumulated',
+					'ES_septum_anode_loss_inside_C_accumulated',
+					'ES_septum_anode_loss_inside_He_accumulated',
+					'ES_septum_anode_loss_total_C_accumulated',
+					'ES_septum_anode_loss_total_He_accumulated',
+					'ES_septum_anode_loss_total_accumulated'
+				],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_total_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'color': 'green',
+								'width': 2,
+							},
+							name = "Total losses",
+							showlegend = True
+						)
+					},
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_total_C_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'dash': "dash",
+								'color': 'green',
+								'width': 2,
+							},
+							name = "Total losses (C)",
+							showlegend = True
+						)
+					},
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_total_He_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'dash': "dashdot",
+								'color': 'green',
+								'width': 2,
+							},
+							name = "Total losses (He)",
+							showlegend = True
+						)
+					},
+					
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_outside_C_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'dash': 'dash',
+								'color': 'red',
+								'width': 2,
+							},
+							name = "Lost outside (C)",
+							showlegend = True
+						)
+					},
+
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_outside_He_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'dash': 'dashdot',
+								'color': 'red',
+								'width': 2,
+							},
+							name = "Lost outside (He)",
+							showlegend = True
+						)
+					},
+
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_inside_C_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'dash': 'dash',
+								'color': 'blue',
+								'width': 2,
+							},
+							name = "Lost inside (C)",
+							showlegend = True
+						)
+					},
+
+					{
+						"x": self.time_coord,
+						"y": 'ES_septum_anode_loss_inside_He_accumulated',
+						"settings": dict(
+							mode = 'lines',
+							line = {
+								'dash': 'dashdot',
+								'color': 'blue',
+								'width': 2,
+							},
+							name = "Lost inside (He)",
+							showlegend = True
+						)
+					},
+
+				]
+			),
 			'ES_septum_anode_losses_outside': DataField(
 				buffer_dependance = [self.time_coord, 'ES_septum_anode_loss_outside'],
 				plot_order = [
@@ -274,6 +455,36 @@ class TrackingDashboard:
 					},
 				]
 			),
+			'spill_mixed_integrated': DataField(
+				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
+				create_new_buffer = ['_spill_C_accumulated', '_spill_He_accumulated', 'spill_C_integrated', 'spill_He_integrated'],
+				callback = self.calculate_spill_mixed_integrated,
+				plot_from = [self.time_coord, 'spill_C_integrated', 'spill_He_integrated'],
+				plot_order = [
+					{
+						"x": self.time_coord,
+						"y": 'spill_C_integrated',
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "blue"
+							),
+							name = "Carbon"
+						)
+					},
+					{
+						"x": self.time_coord,
+						"y": 'spill_He_integrated',
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "red"
+							),
+							name = "Helium"
+						)
+					},
+				]
+			),
 			'spill_mixed_accumulated': DataField(
 				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
 				create_new_buffer = ['spill_C_accumulated', 'spill_He_accumulated'],
@@ -306,19 +517,19 @@ class TrackingDashboard:
 			),
 			'spill_mixed_diff_accumulated': DataField(
 				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
-				create_new_buffer = ['C_He_difference_accumulated'],
+				create_new_buffer = ['He_C_difference_accumulated', '_C_accumulated', '_He_accumulated'],
 				callback = self.calculate_spill_mixed_diff_accumulated,
-				plot_from = [self.time_coord, 'C_He_difference_accumulated'],
+				plot_from = [self.time_coord, 'He_C_difference_accumulated'],
 				plot_order = [
 					{
 						"x": self.time_coord,
-						"y": 'C_He_difference_accumulated',
+						"y": 'He_C_difference_accumulated',
 						"settings": dict(
 							mode = "lines",
 							line = dict(
 								color = "green"
 							),
-							name = "Carbon - Helium"
+							name = "Helium / Carbon"
 						)
 					},
 				]
@@ -458,6 +669,14 @@ class TrackingDashboard:
 		threshold = -0.055 - (px + 7.4e-3)**2  / (2 * 1.7857e-3)
 		lost_inside_septum_mask = x > threshold
 		
+		if any(lost_inside_septum_mask):
+			print(f"Entered ES septum")
+			print(f"x = {x}")
+			print(f"px = {px}")
+			print(f"Threshold based on px: {threshold}")
+			print(f"Lost maks {lost_inside_septum_mask}")
+			print()
+
 		if append_to_buffer:
 			self.data_buffer['ES_septum_anode_loss_inside'].append(sum(lost_inside_septum_mask))
 		
@@ -499,6 +718,36 @@ class TrackingDashboard:
 		self.data_buffer['spill_C'].append(sum(extracted_C))
 		self.data_buffer['spill_He'].append(sum(extracted_He))
 	
+	def calculate_spill_mixed_integrated(self):
+		
+		window_length = 100 # in turns
+		
+		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
+
+		# separating Carbon from Helium
+		ion = np.array(self.data_buffer['ion'].recent_data)
+		is_C = ion == "carbon"
+		is_He = ion == "helium"
+
+		extracted_C = is_C & ~lost_inside
+		extracted_He = is_He & ~lost_inside
+
+		spill_C_prev = self.data_buffer['_spill_C_accumulated'].data[-1] if self.data_buffer['_spill_C_accumulated'].data else 0
+		spill_He_prev = self.data_buffer['_spill_He_accumulated'].data[-1] if self.data_buffer['_spill_He_accumulated'].data else 0
+
+		self.data_buffer['_spill_C_accumulated'].append(sum(extracted_C) + spill_C_prev)
+		self.data_buffer['_spill_He_accumulated'].append(sum(extracted_He) + spill_He_prev)
+
+		start, end = 0, len(self.data_buffer['_spill_C_accumulated'].data) - 1
+
+		if end < window_length - 1:
+			start = 0
+		else:
+			start = end - (window_length - 1)
+
+		self.data_buffer['spill_C_integrated'].append(self.data_buffer['_spill_C_accumulated'].data[-1] - self.data_buffer['_spill_C_accumulated'].data[start])
+		self.data_buffer['spill_He_integrated'].append(self.data_buffer['_spill_He_accumulated'].data[-1] - self.data_buffer['_spill_He_accumulated'].data[start])
+
 	def calculate_spill_mixed_accumulated(self):
 		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
 
@@ -516,6 +765,68 @@ class TrackingDashboard:
 		self.data_buffer['spill_C_accumulated'].append(sum(extracted_C) + spill_C_prev)
 		self.data_buffer['spill_He_accumulated'].append(sum(extracted_He) + spill_He_prev)
 
+	def calculate_total_accumulated_loss_at_septum(self):
+		
+		lost_inside_before = self.data_buffer['ES_septum_anode_loss_inside_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_inside_accumulated'].data else 0
+		lost_outside_before = self.data_buffer['ES_septum_anode_loss_outside_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_outside_accumulated'].data else 0
+
+		lost_inside_at_last_turn = sum(self.calculate_loss_inside_septum(append_to_buffer = False))
+		lost_outside_at_last_turn = self.data_buffer['ES_septum_anode_loss_outside'].recent_data[0]
+
+		self.data_buffer['ES_septum_anode_loss_outside_accumulated'].append(lost_outside_before + lost_outside_at_last_turn)
+		self.data_buffer['ES_septum_anode_loss_inside_accumulated'].append(lost_inside_before + lost_inside_at_last_turn)
+
+		self.data_buffer['ES_septum_anode_loss_total_accumulated'].append(
+			self.data_buffer['ES_septum_anode_loss_outside_accumulated'].data[-1] + self.data_buffer['ES_septum_anode_loss_inside_accumulated'].data[-1]
+		)
+
+	def calculate_total_accumulated_loss_at_septum_mixed(self):
+
+		lost_inside_before_C = self.data_buffer['ES_septum_anode_loss_inside_C_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_inside_C_accumulated'].data else 0
+		lost_outside_before_C = self.data_buffer['ES_septum_anode_loss_outside_C_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_outside_C_accumulated'].data else 0
+
+		lost_inside_before_He = self.data_buffer['ES_septum_anode_loss_inside_He_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_inside_He_accumulated'].data else 0
+		lost_outside_before_He = self.data_buffer['ES_septum_anode_loss_outside_He_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_outside_He_accumulated'].data else 0
+
+		lost_outside_at_last_turn_C = self.data_buffer['ES_septum_anode_loss_outside_C'].recent_data[0]
+		lost_outside_at_last_turn_He = self.data_buffer['ES_septum_anode_loss_outside_He'].recent_data[0]
+
+		lost_inside_at_last_turn = self.calculate_loss_inside_septum(append_to_buffer = False)
+
+		ion = np.array(self.data_buffer['ion'].recent_data)
+		is_C = ion == "carbon"
+		is_He = ion == "helium"
+
+		lost_inside_at_last_turn_C = is_C & lost_inside_at_last_turn
+		lost_inside_at_last_turn_He = is_He & lost_inside_at_last_turn
+
+		
+
+		# lost inside
+		self.data_buffer['ES_septum_anode_loss_inside_C_accumulated'].append(lost_inside_before_C + int(sum(lost_inside_at_last_turn_C)))
+		self.data_buffer['ES_septum_anode_loss_inside_He_accumulated'].append(lost_inside_before_He + int(sum(lost_inside_at_last_turn_He)))
+
+		# lost outside
+		self.data_buffer['ES_septum_anode_loss_outside_C_accumulated'].append(lost_outside_before_C + lost_outside_at_last_turn_C)
+		self.data_buffer['ES_septum_anode_loss_outside_He_accumulated'].append(lost_outside_before_He + lost_outside_at_last_turn_He)
+
+		# total
+		self.data_buffer['ES_septum_anode_loss_total_C_accumulated'].append(
+			self.data_buffer['ES_septum_anode_loss_outside_C_accumulated'].data[-1] + self.data_buffer['ES_septum_anode_loss_inside_C_accumulated'].data[-1]
+		)
+
+		self.data_buffer['ES_septum_anode_loss_total_He_accumulated'].append(
+			self.data_buffer['ES_septum_anode_loss_outside_He_accumulated'].data[-1] + self.data_buffer['ES_septum_anode_loss_inside_He_accumulated'].data[-1]
+		)
+
+		self.data_buffer['ES_septum_anode_loss_total_accumulated'].append(
+			self.data_buffer['ES_septum_anode_loss_total_C_accumulated'].data[-1] + self.data_buffer['ES_septum_anode_loss_total_He_accumulated'].data[-1]
+		)
+
+#		print(f"Total accumulated losses")
+#		print(self.data_buffer['ES_septum_anode_loss_total_accumulated'])
+
+
 	def calculate_spill_mixed_diff_accumulated(self):
 		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
 
@@ -527,14 +838,29 @@ class TrackingDashboard:
 		extracted_C = is_C & ~lost_inside
 		extracted_He = is_He & ~lost_inside
 
-#		print(f"Extracted C {extracted_C}")
-#		print(f"Extracted He {extracted_He}")
+		if not self.data_buffer['_C_accumulated'].data:
+			self.data_buffer['_C_accumulated'].append(0)
 		
-		diff_prev = self.data_buffer['C_He_difference_accumulated'].data[-1] if self.data_buffer['C_He_difference_accumulated'].data else 0
+		if not self.data_buffer['_He_accumulated'].data:
+			self.data_buffer['_He_accumulated'].append(0)
 
-#		print(f"diff_prev = {diff_prev} \n")
+		C_accumulated = self.data_buffer['_C_accumulated'].data[0] + sum(extracted_C)
+		He_accumulated = self.data_buffer['_He_accumulated'].data[0] + sum(extracted_He)
 
-		self.data_buffer['C_He_difference_accumulated'].append(sum(extracted_C) - sum(extracted_He) + diff_prev)
+#		print(f"C_accumulated = {C_accumulated}")
+#		print(f"He_accumulated = {He_accumulated}")
+#		print(f"sum(extracted_C) = {sum(extracted_C)}")
+#		print(f"sum(extracted_He) = {sum(extracted_He)}")
+#		print()
+
+		if C_accumulated != 0:
+			self.data_buffer['He_C_difference_accumulated'].append(He_accumulated / C_accumulated)
+		else:
+			self.data_buffer['He_C_difference_accumulated'].append(0)
+
+		self.data_buffer['_C_accumulated'].data[0] = C_accumulated
+		self.data_buffer['_He_accumulated'].data[0] = He_accumulated
+
 
 	def _clear_buffer(self):
 		# resetting the buffers in the memory
@@ -656,6 +982,24 @@ class TrackingDashboard:
 					width = 1800,
 					height = 400,
 				)
+
+			case 'ES_septum_anode_losses_accumulated':
+				fig.update_layout(
+					title = 'Accumulated losses on the anode',
+					xaxis_title = self.time_coord,
+					yaxis_title = 'Lost [a.u.]',
+					width = 1500,
+					height = 700,
+				)
+
+			case 'ES_septum_anode_losses_mixed_accumulated':
+				fig.update_layout(
+					title = 'Accumulated losses on the anode',
+					xaxis_title = self.time_coord,
+					yaxis_title = 'Lost [a.u.]',
+					width = 1500,
+					height = 700,
+				)
 			
 			case 'ES_septum_anode_losses_inside':			
 				fig.update_layout(
@@ -743,7 +1087,24 @@ class TrackingDashboard:
 					title = 'Accumulated spill, mixed beam',
 					xaxis_title = self.time_coord,
 					yaxis_title = 'Spill',
-					width = 1200,
+					width = 1400,
+					height = 700,
+				)
+
+			case 'spill_mixed_integrated':
+				if self.time_coord == 'time':
+					fig.update_xaxes(
+						type = "date",
+						tickformat = "%H:%M:%S",
+						tickangle = 0,
+						showgrid = True,
+					)
+				
+				fig.update_layout(
+					title = 'Integrated spill, mixed beam',
+					xaxis_title = self.time_coord,
+					yaxis_title = 'Spill',
+					width = 1400,
 					height = 700,
 				)
 			
@@ -757,7 +1118,7 @@ class TrackingDashboard:
 					)
 				
 				fig.update_layout(
-					title = 'Extracted C and He difference, mixed beam',
+					title = 'Extracted He / C, mixed beam',
 					xaxis_title = self.time_coord,
 					yaxis_title = 'Spill',
 					width = 1200,
@@ -931,7 +1292,7 @@ class TrackingDashboard:
 		for key in self.data_to_monitor:
 			
 			# Tab 1 - Turn dependent data
-			if key in {'intensity', 'ES_septum_anode_losses', 'ES_septum_anode_losses_inside', 'ES_septum_anode_losses_outside', 'spill', 'spill_mixed', 'spill_accumulated', 'spill_mixed_accumulated', 'spill_mixed_diff_accumulated'}:
+			if key in {'intensity', 'ES_septum_anode_losses', 'ES_septum_anode_losses_accumulated', 'ES_septum_anode_losses_mixed_accumulated', 'ES_septum_anode_losses_inside', 'ES_septum_anode_losses_outside', 'spill', 'spill_mixed', 'spill_accumulated', 'spill_mixed_accumulated', 'spill_mixed_integrated', 'spill_mixed_diff_accumulated'}:
 				divs['turn_dependent_data'].append(
 					html.Div([
 						dcc.Graph(
