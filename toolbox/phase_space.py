@@ -195,7 +195,14 @@ def get_stable_and_unstable_particle(
 		calculation_settings: dict,
 		**kwargs
 	) -> tuple[tuple[Particles, Particles], dict]:
+	"""
+	
+	Additional paramters
+	--------------------
+	verbose
 
+	"""
+	
 	res, iteration_data = get_stable_limit(
 		line = line, 
 		ion = ion, 
@@ -239,6 +246,163 @@ def get_stable_and_unstable_particle(
 
 	return (stable_particle, unstable_particle), iteration_data
 
+def get_separatrix_vertices(
+		line: Line, 
+		ion: dict,
+		ex_norm: float,  
+		delta: float,
+		ransac_settings: dict,
+		calculation_settings: dict,
+		**kwargs
+	):
+	"""
+	Parameters
+	----------
+	ransac_settings 
+		Parameter for RANSAC
+
+	Additional parameters
+	---------------------
+	verbose
+
+	"""
+	from skimage.measure import ransac, LineModelND
+
+	verbose = kwargs.get('verbose', 0)
+
+	particles, __ = get_stable_and_unstable_particle(
+		line = line,
+		ion = ion,
+		ex_norm = ex_norm,
+		delta = delta,
+		calculation_settings = calculation_settings,
+		verbose = verbose
+	)
+	stable_particle, unstable_particle = particles
+
+	p = stable_particle.copy()
+	line.track(p, num_turns = calculation_settings['num_turns'], turn_by_turn_monitor = True)
+	stable_rec = line.record_last_track
+
+	p = unstable_particle.copy()
+	line.track(p, num_turns = 1000, turn_by_turn_monitor = True)
+	unstable_rec = line.record_last_track
+
+	_zero_st = (stable_rec.x[0] == 0) & (stable_rec.px[0] == 0)
+	_zero_unst = (unstable_rec.x[0] == 0) & (unstable_rec.px[0] == 0)
+
+	separatrix = dict(
+		x_stable = stable_rec.x[0][~_zero_st],
+		px_stable = stable_rec.px[0][~_zero_st],
+		
+		x_unstable = unstable_rec.x[0][~_zero_unst],
+		px_unstable = unstable_rec.px[0][~_zero_unst]
+	)
+
+	separatrix['x'] = np.concatenate((separatrix['x_stable'], separatrix['x_unstable']))
+	separatrix['px'] = np.concatenate((separatrix['px_stable'], separatrix['px_unstable']))
+
+	p = np.c_[separatrix['x_stable'], separatrix['px_stable']]
+
+	lines_properties = []
+	# using RANSAC to find 3 lines in the phase space
+	for i in range(3):
+
+		model, inliers = ransac(p, LineModelND, min_samples = 2, **ransac_settings)
+
+		p0, u = model.params
+		
+		u = - u / np.linalg.norm(u)
+
+		right_amp = (max(p[:, 0][inliers]) - p0[0]) / u[0]
+		left_amp = (min(p[:, 0][inliers]) - p0[0]) / u[0]
+		
+		L = np.array([p0 + u * left_amp, p0 + u * right_amp])
+		a = (L[1, 1] - L[0, 1]) / (L[1, 0] - L[0, 0])
+		b = L[0, 1] - a * L[0, 0]
+
+		lines_properties.append(dict(a = a, b = b))
+
+		if verbose == 2:
+			import matplotlib.pyplot as plt
+			import seaborn as sns
+			data = DataFrame({
+				'x': p[:, 0],
+				'px': p[:, 1],
+				'group': np.where(inliers, "Inliers", "Outliers")
+			})
+			
+			sns.scatterplot(
+				data = data,
+				x = 'x',
+				y = 'px',
+				hue = 'group',
+				palette = {
+					'Inliers': 'tab:red',
+					'Outliers': 'tab:blue'
+				},
+				s = 10,
+				alpha = 1.0
+			)
+			
+			plt.plot(L[:, 0], L[:, 1], '-', linewidth = 1.0, color = "tab:red")
+			
+			plt.xlabel('x')
+			plt.ylabel('p_x')
+			plt.show()
+
+		p = p[~inliers]
+
+	def lines_intersecton(line1, line2):
+		a1, b1 = line1['a'], line1['b']
+		a2, b2 = line2['a'], line2['b']
+		
+		_x = (b2 - b1) / (a1 - a2)
+		_y = a1 * _x + b1
+		return np.array([_x, _y])
+	
+	vertices = np.array(list(map(lambda i: lines_intersecton(lines_properties[i[0]], lines_properties[i[1]]), [[0, 1], [0, 2], [1, 2]])))
+
+	if verbose == 2:
+		import matplotlib.pyplot as plt
+		import seaborn as sns
+
+		with sns.axes_style("darkgrid"):
+
+			sns.scatterplot(
+				x = separatrix['x_unstable'],
+				y = separatrix['px_unstable'],
+				s = 10,
+				color = "tab:red",
+				label = "Unstable particle",
+			)
+			
+			sns.scatterplot(
+				x = separatrix['x_stable'],
+				y = separatrix['px_stable'],
+				s = 10,
+				color = "tab:blue",
+				label = "Stable particle",
+			)
+
+			plt.xlabel("x")
+			plt.ylabel("px")
+
+			plt.show()
+
+		with sns.axes_style("darkgrid"):
+
+			x_range = np.linspace(min(separatrix['x']), max(separatrix['x']))
+			
+			for i in range(3):
+				line = lines_properties[i]['a'] * x_range + lines_properties[i]['b']
+				line_y_range = (line > min(separatrix['px'])) & (line < max(separatrix['px']))
+				
+				plt.plot(x_range[line_y_range], line[line_y_range], '-', color = "tab:orange")
+
+			plt.show()
+
+	return DataFrame(dict(x = vertices[:, 0], px = vertices[:, 1]))
 
 def get_phase_portrait2d(monitor: ParticlesMonitor, particles: Particles, at_turn: int, plane: str = 'x') -> DataFrame:
 	"""
