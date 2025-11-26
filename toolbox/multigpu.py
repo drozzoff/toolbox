@@ -7,9 +7,7 @@ import warnings
 import multiprocessing as mp
 from multiprocessing import shared_memory
 
-from tqdm import tqdm
 import numpy as np
-import pyopencl as cl 
 import xobjects as xo
 import xtrack as xt
 import time
@@ -63,6 +61,8 @@ def worker(
 	log_worker(t0, device, "Created a line", verbose = verbose)
 
 	line_to_track.build_tracker(_context = current_context)
+	line_to_track.optimize_for_tracking()
+	
 	log_worker(t0, device, "Built tracker", verbose = verbose)
 
 	coords_to_track = {}
