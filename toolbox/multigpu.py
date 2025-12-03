@@ -47,7 +47,6 @@ def worker(
 	i0: int,
 	i1: int,
 	shm_info: dict,
-	out_shm_info: dict,
 	verbose: bool = False,
 	progress_queue = None,
 	**kwargs
@@ -61,47 +60,44 @@ def worker(
 	log_worker(t0, device, "Created a line", verbose = verbose)
 
 	line_to_track.build_tracker(_context = current_context)
-	line_to_track.optimize_for_tracking()
-	
+	line_to_track.optimize_for_tracking(verbose = False)
+
 	log_worker(t0, device, "Built tracker", verbose = verbose)
 
 	coords_to_track = {}
-
 	for coord in shm_info:
-		__, full_array = attach_shared_array(shm_info[coord]['in_name'], num_particles)
-		coords_to_track[coord] = full_array[i0:i1].copy()
+		try:
+			__, full_array = attach_shared_array(shm_info[coord]['in_name'], num_particles)
+			coords_to_track[coord] = full_array[i0:i1].copy()
+		except KeyError:
+			pass
 
 	log_worker(t0, device, "Prepared particles' coordinates", verbose = verbose)
 
-	part_build_params = {}
-	for key in {'nemitt_x', 'nemitt_y', 'method'}:
-		if key in kwargs:
-			part_build_params[key] = kwargs.get(key)
-#	print(part_build_params)
-	particles_to_track = line_to_track.build_particles(_context = current_context, **(part_build_params | coords_to_track))
+	particles_to_track = line_to_track.build_particles(_context = current_context, **coords_to_track)
 
 	log_worker(t0, device, "Created particles", verbose = verbose)
 
-
-	tmp = time.time()
 	line_to_track.track(
 		particles_to_track, 
 		num_turns = num_turns,
-		with_progress = True
+		time = True,
+		with_progress = verbose,
 	)
 
-	log_worker(t0, device, f"Finished tracking | Track time = {time.time() - tmp}", verbose = verbose)
+	log_worker(t0, device, f"Finished tracking | Track time = {line_to_track.time_last_track}", verbose = verbose)
 
-	for coord in out_shm_info:
-		out_name = out_shm_info[coord]['out_name']
-		__, out_array = attach_shared_array(out_name, num_particles)
-		
-		dev_arr = getattr(particles_to_track, coord)
+	for coord in shm_info:
+		try:
+			out_name = shm_info[coord]['out_name']
+			__, out_array = attach_shared_array(out_name, num_particles)
+			
+			dev_arr = getattr(particles_to_track, coord)
+			tracked_values = particles_to_track._context.nparray_from_context_array(dev_arr)
 
-		tracked_values = particles_to_track._context.nparray_from_context_array(dev_arr)
-
-#		print(tracked_values, tracked_values.shape, type(tracked_values))
-		out_array[i0:i1] = tracked_values
+			out_array[i0:i1] = tracked_values
+		except KeyError:
+			pass
 
 	log_worker(t0, device, "Extracted data to the shared memory", verbose = verbose)
 
@@ -112,7 +108,7 @@ def log_main(t0, msg, *, verbose = True):
 	now = time.time() - t0
 	print(f"[main] {now:.6f} s: {msg}", flush = True)
 
-def _clean_shm(shm_info: dict):
+def _clean_shm(shm_info: dict, verbose = True):
 	for coord in shm_info:	
 		for prefix in {'in', 'out'}:
 			try:
@@ -120,19 +116,19 @@ def _clean_shm(shm_info: dict):
 				shm = shared_memory.SharedMemory(name = shm_name, create = False)
 				shm.close()
 				shm.unlink()
-				print(f"--Cleaned {shm_name}")
+				if verbose: print(f"--Cleaned {shm_name}")
 
 			except (FileNotFoundError, KeyError):
 				pass
 
 def track_multigpu(
+	particles: xt.Particles,
 	*, 
 	line_constructor: callable, 
 	num_turns: int, 
 	num_gpus: int, 
 	with_progress = False, 
-	verbose: bool = True,
-	verbose_worker: bool = False,
+	verbose: int = 1,
 	**kwargs):
 	"""
 	Runs tracking on GSI HPC with multiple GPUs.
@@ -142,6 +138,8 @@ def track_multigpu(
 
 	Parameters
 	----------
+	particles
+		`Particles` object to track
 	line_constructor
 		A function that constructs `xt.Line` object that is going to be used to do the tracking.
 		It needs to be a function since the workers will expand the latice on each context separately.
@@ -152,28 +150,15 @@ def track_multigpu(
 	with_prgress
 		If `True` a collective progress bar appears to sum up `.track()` from each context. *not implemented*
 	verbose
-		If `True` prints the timestamps of the program execution
-	verbose_worker
-		If `True` prints the timestamps of execution of each worker
+		Controls the output level.
+		`0` - no output
+		`1` - output from main process
+		`2` - output from main and workers' processes
 
-	Additional parameters
-	---------------------
-	x : np.array
-	px : np.array
-	y : np.array
-	py : np.array
-	zeta : np.array
-	delta : np.array
-	x_norm : np.array
-	px_norm : np.array
-	y_norm : np.array
-	py_norm : np.array
-	zeta_norm : np.array
-	delta_norm : np.array
-	nemitt_x: float
-	nemitt_y: float
-	method: str
-
+	Returns
+	-------
+	xt.Particles
+		A new object `xt.Particles` with the data at the end of the tracking.
 	"""
 	t0 = time.time()
 
@@ -190,60 +175,50 @@ def track_multigpu(
 
 	# accepted list of coordinates
 	_coordinates_list = ['x', 'px', 'y', 'py', 'zeta', 'delta']
-	_normalized_coordinates_list = ['x_norm', 'px_norm', 'y_norm', 'py_norm', 'zeta_norm', 'delta_norm'] # only for the input
-	_accepted_coordinates_list = _coordinates_list + _normalized_coordinates_list
+	_tracking_related_coordinates = ['s', 'at_turn', 'at_element']
+
+	verbose_worker = verbose > 1
 
 	log_main(t0, "Start up", verbose = verbose)
 
 	# prebuild shm mapping
 	shm_info = {}
-	number_of_particles = 1
-	for coord in _accepted_coordinates_list:
-		if not coord in kwargs:
-			continue
-
-		n_elements = len(kwargs.get(coord))
-
-		if number_of_particles == 1:
-			number_of_particles = n_elements
-		elif n_elements not in (1, number_of_particles):
-			raise Exception("The arrays of the coordinates have incorrect size. The tracking will fail!")
-		
-		shm_info[coord] = {
-			'in_name': f"{coord}_shm_in",
-#			'out_name': f"{coord}_shm_out",
-			'size': n_elements
-		}
-
-	# output coordinates are always fixed to _coordinates_list
-	out_shm_info = {}
+	number_of_particles = len(particles.x)
 
 	for coord in _coordinates_list:
-		out_shm_info[coord] = {
+		shm_info[coord] = {
+			'in_name': f"{coord}_shm_in",
 			'out_name': f"{coord}_shm_out",
-			'size': n_elements
+			'size': number_of_particles
+		}
+
+	for coord in _tracking_related_coordinates:
+		shm_info[coord] = {
+			'out_name': f"{coord}_shm_out",
+			'size': number_of_particles
 		}
 
 	log_main(t0, "Calculated a shared memory mapping", verbose = verbose)
 
 	# making sure, shared memo is not occupied
-	_clean_shm(shm_info)
-	_clean_shm(out_shm_info)
+	_clean_shm(shm_info, verbose)
 
 	log_main(t0, "Startup cleanup", verbose = verbose)
 
 	for coord in shm_info:
-		data = kwargs.get(coord)
-
-		__, arr = create_shared_array(shm_info[coord]['in_name'], number_of_particles, np.float64)
-		if shm_info[coord]['size'] == 1:
-			arr[:] = np.full(number_of_particles, data[0], dtype = np.float64)
-		else:
+		try:
+			__, arr = create_shared_array(shm_info[coord]['in_name'], number_of_particles, np.float64)
+			
+			data = getattr(particles, coord)
 			arr[:] = data
-
-	for coord in out_shm_info:
-		__, out_arr = create_shared_array(out_shm_info[coord]['out_name'], number_of_particles, np.float64)
-	
+		except KeyError:
+			pass
+		
+		try:
+			__, __ = create_shared_array(shm_info[coord]['out_name'], number_of_particles, np.float64)
+		except KeyError:
+			pass
+		
 	log_main(t0, "Set partcicles' data in a shared memory", verbose = verbose)
 
 	progress_queue = mp.Queue() if with_progress else None
@@ -258,7 +233,7 @@ def track_multigpu(
 	for device, (i0, i1) in zip(devices, ranges):
 		p = mp.Process(
 			target = worker,
-			args = (line_constructor, device, num_turns, number_of_particles, i0, i1, shm_info, out_shm_info, verbose_worker, progress_queue),
+			args = (line_constructor, device, num_turns, number_of_particles, i0, i1, shm_info, verbose_worker, progress_queue),
 			kwargs = worker_kwargs
 		)
 		procs.append(p)
@@ -275,20 +250,25 @@ def track_multigpu(
 	
 	log_main(t0, f"Processes joined", verbose = verbose)
 	
-	results = {}
+	tracking_results = {}
 	for coord in _coordinates_list:
-		if coord not in shm_info:
-			continue
 		info = shm_info[coord]
 		__, out_arr = attach_shared_array(info['out_name'], number_of_particles)
-		results[coord] = np.array(out_arr) 
+		tracking_results[coord] = np.array(out_arr)
+	
+	log_main(t0, f"Processed results", verbose = verbose)
+
+	_clean_shm(shm_info, verbose)
+	log_main(t0, f"Exit cleanup", verbose = verbose)
 
 	log_main(t0, f"Finished", verbose = verbose)
 
-	_clean_shm(shm_info)
-	_clean_shm(out_shm_info)
-
-	log_main(t0, f"Exit cleanup", verbose = verbose)
+	return xt.Particles(
+		mass0 = particles.mass0, 
+		q0 = particles.q0,
+		gamma0 = particles.gamma0,
+		**tracking_results
+	)
 
 def line_constructor() -> xt.Line:
 
@@ -311,26 +291,31 @@ def line_constructor() -> xt.Line:
 
 if __name__ == "__main__":
 
-	n_part = int(4e5)
+	line = line_constructor()
+	
+	n_part = int(1e5)
 
-	track_multigpu(
-		line_constructor = line_constructor,
-		num_gpus = 3,
-		num_turns = 100000,
-		with_progress = False,
-#		x = np.random.uniform(-1e-3, 1e-3, n_part),
-#		px = np.random.uniform(-1e-5, 1e-5, n_part),
-		x_norm = np.random.uniform(-1e-3, 1e-3, n_part),
-		px_norm = np.random.uniform(-1e-5, 1e-5, n_part),
-#		y = np.random.uniform(-2e-3, 2e-3, n_part),
-#		py = np.random.uniform(-3e-5, 3e-5, n_part),
+	p = line.build_particles(
+		x = np.random.uniform(-1e-3, 1e-3, n_part),
+		px = np.random.uniform(-1e-5, 1e-5, n_part),
+#		x_norm = np.random.uniform(-1e-3, 1e-3, n_part),
+#		px_norm = np.random.uniform(-1e-5, 1e-5, n_part),
+		y = np.random.uniform(-2e-3, 2e-3, n_part),
+		py = 0.0,
 #		zeta = np.random.uniform(-1e-2, 1e-2, n_part),
 #		delta = np.random.uniform(-1e-4, 1e-4, n_part),
 		method = '4d',
-		nemitt_x = 1.6e-5,
-		nemitt_y = 2e-6,
-		verbose_worker = True,
-
+#		nemitt_x = 1.6e-5,
+#		nemitt_y = 2e-6,
 	)
 
-	print("Tracking done")
+	p_tracked = track_multigpu(
+		p,
+		line_constructor = line_constructor,
+		num_gpus = 1,
+		num_turns = int(1e4),
+		verbose = 0
+	)
+
+	print(p.x, p.px)
+	print(p_tracked.x, p_tracked.px)

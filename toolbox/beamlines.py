@@ -35,7 +35,6 @@ def exc_freq_chirp(
 		ksl = [0.0]
 	)
 
-
 def exc_bpsk(
 	ctx,
 	revolution_frequency: float,
@@ -69,3 +68,19 @@ def exc_bpsk(
 		knl = [k0l],
 		ksl = [0.0]
 	)
+
+def _remove_inactive_multipoles_fix(line: xt.Line):
+	"""
+	Function to replace inactive thick mutipoles.
+	Is needed because `Line.optimize_for_tracking()` does not handle them well.
+	"""
+
+	for ele, ele_name in zip(line, line.element_names):
+		if isinstance(ele, xt.Multipole):
+			aux = ([ele.hxl] + list(ele.knl) + list(ele.ksl))
+			if np.sum(np.abs(np.array(aux))) == 0.0:
+				if ele.isthick and ele.length != 0:
+					line.remove(ele_name)
+
+				
+			
