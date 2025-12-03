@@ -251,7 +251,7 @@ def track_multigpu(
 	log_main(t0, f"Processes joined", verbose = verbose)
 	
 	tracking_results = {}
-	for coord in _coordinates_list:
+	for coord in _coordinates_list + _tracking_related_coordinates:
 		info = shm_info[coord]
 		__, out_arr = attach_shared_array(info['out_name'], number_of_particles)
 		tracking_results[coord] = np.array(out_arr)
@@ -293,7 +293,7 @@ if __name__ == "__main__":
 
 	line = line_constructor()
 	
-	n_part = int(1e5)
+	n_part = int(1e4)
 
 	p = line.build_particles(
 		x = np.random.uniform(-1e-3, 1e-3, n_part),
