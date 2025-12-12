@@ -13,7 +13,9 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Any
 from pathlib import Path
 import pandas as pd
+import pickle as pk
 import datetime
+import xtrack as xt
 
 
 class DataBuffer:
@@ -1493,10 +1495,18 @@ class TrackingDashboard:
 			if mode not in ["file", "file_biomed"]:
 				return []
 			
-			data_dir = Path("data_storage")
+			if mode == 'file_biomed':
+				data_dir = Path("data_storage")
 
-			files = sorted(data_dir.glob("*.parquet"))
-			return [{"label": f.name, "value": str(f)} for f in files]
+				files = sorted(data_dir.glob("*.parquet"))
+				return [{"label": f.name, "value": str(f)} for f in files]
+
+			if mode == 'file':
+				data_dir = Path(".")
+
+				files = sorted(data_dir.glob("*.pkl"))
+				print(files)
+				return [{"label": f.name, "value": str(f)} for f in files]
 
 		@self.app.callback(
 			Output("cycle-selector", "options"),
@@ -1504,24 +1514,44 @@ class TrackingDashboard:
 			Output("load-status", "children"),
 			Input("load-file-btn", "n_clicks"),
 			State("file-selector", "value"),
+			State("mode-switch", "value"),
 			prevent_initial_call = True
 		)
-		def load_file_and_populate_cycles(n_clicks, filepath):
+		def load_file_and_populate_cycles(n_clicks, filepath, mode):
 			if not filepath or not Path(filepath).is_file():
 				return [], None, "No file selected or not found."
-			try:
-				self.read_from_file = pd.read_parquet(filepath)
-			except Exception as e:
-				return [], None, f"Read error: {e}"
-
-			if "cycle_id" not in self.read_from_file.columns:
-				return [], None, "Missing cycle_id."
 			
-			print(self.read_from_file)
-			unique_cycles = sorted(self.read_from_file["cycle_id"].unique())
-			options = [{"label": str(c), "value": c} for c in unique_cycles]
-			default = unique_cycles[0] if unique_cycles else None
-			return options, default, f"Loaded {len(unique_cycles)} cycles."
+			if mode == 'file_biomed':
+				try:
+					self.read_from_file = pd.read_parquet(filepath)
+				except Exception as e:
+					return [], None, f"Read error: {e}"
+				
+
+				if "cycle_id" not in self.read_from_file.columns:
+					return [], None, "Missing cycle_id."
+
+				print(self.read_from_file)
+				unique_cycles = sorted(self.read_from_file["cycle_id"].unique())
+				options = [{"label": str(c), "value": c} for c in unique_cycles]
+				default = unique_cycles[0] if unique_cycles else None
+				return options, default, f"Loaded {len(unique_cycles)} cycles."
+
+			elif mode == 'file':
+				try:
+					with open(filepath, 'rb') as fid:
+						self.read_from_file = xt.Particles.from_dict(pk.load(fid))
+				except Exception as e:
+					return [], None, f"Read error: {e}"
+				
+				print(self.read_from_file)
+				return [0], 0, f"Loaded particles data."
+
+
+				return [0]
+			
+			else:
+				return [], None, "Unknown error"
 
 		@self.app.callback(
 			Output("cycle-load-trigger", "children"),
@@ -1539,9 +1569,53 @@ class TrackingDashboard:
 					return no_update
 
 				elif mode == "file":
-					# offline visualization to be included
-					pass
+					# We read a file which is `xt.Particles` object, so we have to extract the 
+					# data in the proper format for the buffers
+
+					# The data put in the buffers should depend on the data fields requested
+
+					print(self.data_to_monitor)
+
+					with open(filepath, 'rb') as fid:
+						self.read_from_file = xt.Particles.from_dict(pk.load(fid))
+					self.read_from_file.sort(by = 'at_turn', interleave_lost_particles = True)
+
+					self._clear_buffer()		
+
+					max_turns = max(self.read_from_file.at_turn)
+					turns_list = list(range(max_turns + 1))
 					
+					# basic masks
+					lost_mask = self.read_from_file.state == 0
+					at_start = self.read_from_file.s == 0
+					extracted_at_ES = lost_mask & at_start
+
+					# Nparticles buffer
+					if 'Nparticles' in self.data_to_expect:
+						lost_particles = self.read_from_file.filter(lost_mask)
+						particles_alive_for_turns = self.read_from_file._capacity - np.searchsorted(lost_particles.at_turn, turns_list, side = "left")
+
+					# phase space buffer
+					if 'x_extracted_at_ES' in self.data_to_expect or 'px_extracted_at_ES' in self.data_to_expect:
+						lost_particles_at_ES_septum = self.read_from_file.filter(extracted_at_ES)
+					
+					with self._buflock:
+						if 'turn' in self.data_to_expect:
+							self.data_buffer['turn'].extend(turns_list)
+
+						if 'Nparticles' in self.data_to_expect:
+							self.data_buffer['Nparticles'].extend(particles_alive_for_turns)
+
+						if 'x_extracted_at_ES' in self.data_to_expect:
+							self.data_buffer['x_extracted_at_ES'].extend(lost_particles_at_ES_septum.x)
+
+						if 'px_extracted_at_ES' in self.data_to_expect:
+							self.data_buffer['px_extracted_at_ES'].extend(lost_particles_at_ES_septum.px)
+					
+					print(lost_particles_at_ES_septum.at_turn)
+					
+					print(lost_particles_at_ES_septum.at_turn)
+
 				elif mode == "file_biomed":
 					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
 					print(single_cycle)

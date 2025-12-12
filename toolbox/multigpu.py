@@ -175,7 +175,7 @@ def track_multigpu(
 
 	# accepted list of coordinates
 	_coordinates_list = ['x', 'px', 'y', 'py', 'zeta', 'delta']
-	_tracking_related_coordinates = ['s', 'at_turn', 'at_element']
+	_tracking_related_coordinates = ['s', 'at_turn', 'at_element', 'state']
 
 	verbose_worker = verbose > 1
 
