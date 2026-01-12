@@ -1,13 +1,14 @@
 from functools import partial
 import numpy as np
+from numpy.typing import NDArray
 
 
 def generate_bpsk(
 	f0: float, 
-	timestamps: np.array,
+	timestamps: NDArray[np.floating],
 	chip_rate: float,
 	**kwargs
-	) -> np.array:
+	) -> NDArray[np.float32]:
 	
 	if "seed" in kwargs:
 		np.random.default_rng(kwargs.get("seed"))
@@ -33,35 +34,6 @@ def generate_bpsk(
 	signal = modulation * carrier
 	
 	signal = signal.astype(np.float32)
-	return signal
-
-def bpsk_for_extraction(
-	*,
-	frev: float,
-	center_tune: float,
-	tune_bandwidth: float,
-	timestamps: np.array,
-	filename: str | None = None,
-	verbose: int = 0
-	):
-	excitation_frequency = frev * center_tune
-	chip_rate = frev * tune_bandwidth
-
-	timestep = timestamps[1] - timestamps[0]
-	duration = timestamps[-1] - timestamps[0]
-	
-	if verbose:
-		print(f"RBPSK properties:\n\tCarrier = {(excitation_frequency * 1e-6):.4f} MHz; Chip rate = {(chip_rate * 1e-3):.4f} kHz")
-		print(f"\tDuration = {(duration):.5f} s; Sampled at {(1 / timestep * 1e-6):.4f} MHz")
-	
-	signal = generate_bpsk(
-		f0 = excitation_frequency,
-		timestamps = timestamps,
-		chip_rate = chip_rate
-	)
-	if filename:
-		np.save(filename, signal)
-		
 	return signal
 
 def u_pp_model(A_start, A_end, tau_start, tau_end, t):
@@ -92,30 +64,105 @@ def u_pp_machine(t, *, A_start, A_end, tau_start, tau_end, spill_time):
 
 	return res.item() if np.isscalar(t) else res
 
+def plain_bpsk(
+	*,
+	frev: float,
+	Qx: float,
+	Qx_bandwidth: float,
+	timestamps: NDArray[np.floating],
+	filename: str | None = None,
+	verbose: int = 0
+	) -> NDArray[np.float32]:
+	"""
+	Plain RBPSK signal, with normalized amplitude.
+
+	Parameters
+	----------
+	frev
+		Beam revolution frequency
+	Qx
+		Horizontal tune of the beam
+	Qx_bandwidth
+		Horizontal tune bandwidth to be covered by the generated BPSK
+	timestamps
+		Timestamps for the signal
+	filename
+		If provided, the location to save the signal
+	verbose
+		If other than 0 (default = 0) prints some info
+
+	Returns
+	-------
+	NDArray[np.float32]
+		Created BPSK.
+	"""
+
+	excitation_frequency = frev * Qx
+	chip_rate = frev * Qx_bandwidth
+
+	timestep = timestamps[1] - timestamps[0]
+	duration = timestamps[-1] - timestamps[0]
+	
+	if verbose:
+		print(f"RBPSK properties:\n\tCarrier = {(excitation_frequency * 1e-6):.4f} MHz; Chip rate = {(chip_rate * 1e-3):.4f} kHz")
+		print(f"\tDuration = {(duration):.5f} s; Sampled at {(1 / timestep * 1e-6):.4f} MHz")
+	
+	signal = generate_bpsk(
+		f0 = excitation_frequency,
+		timestamps = timestamps,
+		chip_rate = chip_rate
+	)
+	if filename:
+		np.save(filename, signal)
+		
+	return signal
+
 def modulated_bpsk(
 	*,
 	frev: float,
-	center_tune: float,
-	tune_bandwidth: float,
+	Qx: float,
+	Qx_bandwidth: float,
 	A_start: float,
 	A_end: float,
 	tau_start: float,
 	tau_end: float,
 	spill_time: float,
-	duration: float,
-	timestep: float,
+	timestamps: NDArray[np.floating],
 	filename: str | None = None,
 	verbose: int = 0
-	):
+	) -> tuple[float, NDArray[np.float32]]:
 	"""
-	Amplitude modulated RBPSK, the same way as in SIS18 control
-	"""
-	timestamps = np.arange(0, duration, timestep)
+	Amplitude modulated RBPSK. The same way it is implemented in SIS18 control.
 
-	bpsk = bpsk_for_extraction(
+	Parameters
+	----------
+	frev
+		Beam revolution frequency
+	Qx
+		Horizontal tune of the beam
+	Qx_bandwidth
+		Horizontal tune bandwidth to be covered by the generated BPSK
+	A_start
+		Amplitude of the decaying exponent
+	A_end
+		Amplitude of the rising exponent
+	tau_start
+		Decay time
+	tau_end
+		Rise time
+	spill_time
+		Excitation duration, including the fixed ramp time (2 * 0.032)
+	timestamps
+		Timestamps for the signal
+	filename
+		If provided, the location to save the signal
+	verbose
+		If other than 0 (default = 0) prints some info
+	"""
+	bpsk = plain_bpsk(
 		frev = frev,
-		center_tune = center_tune,
-		tune_bandwidth = tune_bandwidth,
+		Qx = Qx,
+		Qx_bandwidth = 	Qx_bandwidth,
 		timestamps = timestamps,
 		verbose = verbose
 	)
@@ -137,4 +184,5 @@ def modulated_bpsk(
 	
 	if filename:
 		np.save(filename, modulated_signal)
+
 	return U_pp_max, modulated_signal
