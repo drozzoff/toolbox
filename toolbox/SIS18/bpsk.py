@@ -43,7 +43,7 @@ def u_pp_model(A_start, A_end, tau_start, tau_end, t):
 	u2 = A_end * np.exp(t / (2 * tau_end) - 1)
 	return alpha * (u1 + u2)
 
-def u_pp_machine(t, *, A_start, A_end, tau_start, tau_end, spill_time):
+def u_pp_windowed(t, *, A_start, A_end, tau_start, tau_end, spill_time):
 	ramp_time = 0.032
 	
 	t = np.asarray(t, dtype = float)
@@ -168,7 +168,7 @@ def modulated_bpsk(
 	)
 	
 	amplitude_modulation_func = partial(
-		u_pp_machine,
+		u_pp_windowed,
 		A_start = A_start,
 		A_end = A_end,
 		tau_start = tau_start,
