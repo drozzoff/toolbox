@@ -136,7 +136,7 @@ class TrackingDashboard:
 								'color': 'green',
 								'width': 2,
 							},
-							name = "Total losses the septumS",
+							name = "Total losses",
 							showlegend = True
 						)
 					},
@@ -644,6 +644,7 @@ class TrackingDashboard:
 		}
 
 		self.data_to_expect, self.data_buffer = [], {}
+		self.callbacks = []
 
 		for data_key in self.data_to_monitor:
 			if data_key not in self.data_fields:
@@ -664,6 +665,10 @@ class TrackingDashboard:
 			# activating the DataField
 			self.data_fields[data_key].state = True
 
+			# storing the callbacks list separately
+			if self.data_fields[data_key].callback is not None:
+				self.callbacks.append(self.data_fields[data_key].callback)
+		
 	def calculate_loss_inside_septum(self, append_to_buffer = True): 		
 		x = np.array(self.data_buffer['x_extracted_at_ES'].recent_data)
 		px = np.array(self.data_buffer['px_extracted_at_ES'].recent_data)
@@ -671,13 +676,13 @@ class TrackingDashboard:
 		threshold = -0.055 - (px + 7.4e-3)**2  / (2 * 1.7857e-3)
 		lost_inside_septum_mask = x > threshold
 		
-		if any(lost_inside_septum_mask):
-			print(f"Entered ES septum")
-			print(f"x = {x}")
-			print(f"px = {px}")
-			print(f"Threshold based on px: {threshold}")
-			print(f"Lost maks {lost_inside_septum_mask}")
-			print()
+#		if any(lost_inside_septum_mask):
+#			print(f"Entered ES septum")
+#			print(f"x = {x}")
+#			print(f"px = {px}")
+#			print(f"Threshold based on px: {threshold}")
+#			print(f"Lost mask {lost_inside_septum_mask}")
+#			print()
 
 		if append_to_buffer:
 			self.data_buffer['ES_septum_anode_loss_inside'].append(sum(lost_inside_septum_mask))
@@ -699,7 +704,11 @@ class TrackingDashboard:
 		self.data_buffer['spill'].append(extracted - lost_inside)
 
 	def calcualte_spill_accumulated(self):
+		
+		print("inside of the puffer")
+
 		extracted = len(self.data_buffer['x_extracted_at_ES'].recent_data)
+		print(extracted)
 		lost_inside = sum(self.calculate_loss_inside_septum(append_to_buffer = False))
 
 		spill_prev = self.data_buffer['spill_accumulated'].data[-1] if self.data_buffer['spill_accumulated'].data else 0
@@ -959,7 +968,7 @@ class TrackingDashboard:
 			if len(x) != len(y):
 				print(f"[ERROR] length missmatch between x and y for '{key}' trace id = {i}")
 				return
-			
+
 			fig.add_trace(go.Scatter(
 				x = x,
 				y = y,
@@ -1544,11 +1553,8 @@ class TrackingDashboard:
 				except Exception as e:
 					return [], None, f"Read error: {e}"
 				
-				print(self.read_from_file)
+#				print(self.read_from_file)
 				return [0], 0, f"Loaded particles data."
-
-
-				return [0]
 			
 			else:
 				return [], None, "Unknown error"
@@ -1571,11 +1577,10 @@ class TrackingDashboard:
 				elif mode == "file":
 					# We read a file which is `xt.Particles` object, so we have to extract the 
 					# data in the proper format for the buffers
-
-					# The data put in the buffers should depend on the data fields requested
-
+					
 					print(self.data_to_monitor)
-
+					print(self.data_to_expect)
+					# The data put in the buffers should depend on the data fields requested
 					with open(filepath, 'rb') as fid:
 						self.read_from_file = xt.Particles.from_dict(pk.load(fid))
 					self.read_from_file.sort(by = 'at_turn', interleave_lost_particles = True)
@@ -1587,19 +1592,78 @@ class TrackingDashboard:
 					
 					# basic masks
 					lost_mask = self.read_from_file.state == 0
-					at_start = self.read_from_file.s == 0
+					at_start = abs(self.read_from_file.s) < 1e-7
 					extracted_at_ES = lost_mask & at_start
 
 					# Nparticles buffer
 					if 'Nparticles' in self.data_to_expect:
 						lost_particles = self.read_from_file.filter(lost_mask)
+						print("Particles lost in the tracking")
+						print(lost_particles.get_table())
 						particles_alive_for_turns = self.read_from_file._capacity - np.searchsorted(lost_particles.at_turn, turns_list, side = "left")
 
 					# phase space buffer
 					if 'x_extracted_at_ES' in self.data_to_expect or 'px_extracted_at_ES' in self.data_to_expect:
 						lost_particles_at_ES_septum = self.read_from_file.filter(extracted_at_ES)
-					
+
+					# losses on the septum wires
+					if 'ES_septum_anode_loss_outside' in self.data_to_expect:
+						at_septum_end = self.read_from_file.s == 1.5
+						lost_at_septum_end = lost_mask & at_septum_end
+						lost_particles_at_septum_end = self.read_from_file.filter(lost_at_septum_end)						
+						
+						print("Particles lost on the outside of a septum")
+						print(lost_particles_at_septum_end.get_table())
+
+						number_lost_particles_at_septum_end = np.bincount(
+							lost_particles_at_septum_end.at_turn,
+							minlength = max_turns
+						)
+
+					# since I do not use callbacks from listener, I have to populate some buffers manually here
+					if 'ES_septum_anode_losses_accumulated' in self.data_to_monitor:
+						number_lost_particles_at_septum_end_accumulated = np.cumsum(number_lost_particles_at_septum_end)
+
+					if any(key in self.data_to_monitor for key in (
+						'ES_septum_anode_losses_inside', 
+						'ES_septum_anode_losses', 
+						'ES_septum_anode_losses_accumulated', 
+						'spill', 
+						'spill_accumulated'
+						)):
+						x = lost_particles_at_ES_septum.x
+						px = lost_particles_at_ES_septum.px
+
+						threshold = -0.055 - (px + 7.4e-3)**2  / (2 * 1.7857e-3)
+						lost_inside_septum = x > threshold
+						lost_particles_inside_of_septum = lost_particles_at_ES_septum.filter(lost_inside_septum)
+						
+						print("Particles lost on the wires inside of a septum")
+						print(lost_particles_inside_of_septum.get_table())
+
+						number_lost_particles_inside_of_septum = np.bincount(
+							lost_particles_inside_of_septum.at_turn,
+							minlength = max_turns
+						)
+					if 'ES_septum_anode_losses' in self.data_to_monitor:
+						septum_losses = number_lost_particles_inside_of_septum + number_lost_particles_at_septum_end
+
+					if 'ES_septum_anode_losses_accumulated' in self.data_to_monitor:
+						number_lost_particles_inside_of_septum_accumulated = np.cumsum(number_lost_particles_inside_of_septum)
+						septum_losses_accumulated = number_lost_particles_inside_of_septum_accumulated + number_lost_particles_at_septum_end_accumulated
+
+					if any(key in self.data_to_monitor for key in ('spill', 'spill_accumulated')):
+						entered_septum = np.bincount(
+							lost_particles_at_ES_septum.at_turn,
+							minlength = max_turns
+						)
+						extracted_at_ES_at_turn = entered_septum - number_lost_particles_inside_of_septum
+
+					if 'spill_accumulated' in self.data_to_monitor:
+						extracted_at_ES_at_turn_acc = np.cumsum(extracted_at_ES_at_turn)
+
 					with self._buflock:
+						# data buffers
 						if 'turn' in self.data_to_expect:
 							self.data_buffer['turn'].extend(turns_list)
 
@@ -1611,10 +1675,28 @@ class TrackingDashboard:
 
 						if 'px_extracted_at_ES' in self.data_to_expect:
 							self.data_buffer['px_extracted_at_ES'].extend(lost_particles_at_ES_septum.px)
-					
-					print(lost_particles_at_ES_septum.at_turn)
-					
-					print(lost_particles_at_ES_septum.at_turn)
+						
+						if 'ES_septum_anode_loss_outside' in self.data_to_expect:
+							self.data_buffer['ES_septum_anode_loss_outside'].extend(number_lost_particles_at_septum_end)
+						
+						# data fields
+						if any(key in self.data_to_monitor for key in ('ES_septum_anode_losses_inside', 'ES_septum_anode_losses')):
+							self.data_buffer['ES_septum_anode_loss_inside'].extend(number_lost_particles_inside_of_septum)
+
+						if 'ES_septum_anode_losses_accumulated' in self.data_to_monitor:
+							self.data_buffer['ES_septum_anode_loss_outside_accumulated'].extend(number_lost_particles_at_septum_end_accumulated)
+							self.data_buffer['ES_septum_anode_loss_inside_accumulated'].extend(number_lost_particles_inside_of_septum_accumulated)
+							self.data_buffer['ES_septum_anode_loss_total_accumulated'].extend(septum_losses_accumulated)
+
+						if 'ES_septum_anode_losses' in self.data_to_monitor:
+							self.data_buffer['ES_septum_anode_loss_total'].extend(septum_losses)
+
+						if 'spill' in self.data_to_monitor:
+							self.data_buffer['spill'].extend(extracted_at_ES_at_turn)
+						
+						if 'spill_accumulated' in self.data_to_monitor:
+							self.data_buffer['spill_accumulated'].extend(extracted_at_ES_at_turn_acc)
+
 
 				elif mode == "file_biomed":
 					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
