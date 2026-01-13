@@ -43,8 +43,9 @@ def u_pp_model(A_start, A_end, tau_start, tau_end, t):
 	u2 = A_end * np.exp(t / (2 * tau_end) - 1)
 	return alpha * (u1 + u2)
 
-def u_pp_windowed(t, *, A_start, A_end, tau_start, tau_end, spill_time):
+def u_pp_windowed(t, *, A_start, A_end, tau_start, tau_end, spill_time, instant_ramp = False):
 	ramp_time = 0.032
+	if instant_ramp: ramp_time = 1e-12
 	
 	t = np.asarray(t, dtype = float)
 	res = np.zeros_like(t, dtype = float)
@@ -94,7 +95,7 @@ def plain_bpsk(
 	Returns
 	-------
 	NDArray[np.float32]
-		Created BPSK.
+		Signal
 	"""
 
 	excitation_frequency = frev * Qx
@@ -128,6 +129,7 @@ def modulated_bpsk(
 	tau_end: float,
 	spill_time: float,
 	timestamps: NDArray[np.floating],
+	instant_ramp: bool = False,
 	filename: str | None = None,
 	verbose: int = 0
 	) -> tuple[float, NDArray[np.float32]]:
@@ -154,10 +156,17 @@ def modulated_bpsk(
 		Excitation duration, including the fixed ramp time (2 * 0.032)
 	timestamps
 		Timestamps for the signal
+	instant_ramp
+		If True, plate voltage is instantly ramped up/down
 	filename
 		If provided, the location to save the signal
 	verbose
 		If other than 0 (default = 0) prints some info
+
+	Returns
+	-------
+	tuple[float, NDArray[np.float32]]
+		Maximum peak2peak voltage between the plates [V]; signal
 	"""
 	bpsk = plain_bpsk(
 		frev = frev,
@@ -173,7 +182,8 @@ def modulated_bpsk(
 		A_end = A_end,
 		tau_start = tau_start,
 		tau_end = tau_end,
-		spill_time = spill_time
+		spill_time = spill_time,
+		instant_ramp = instant_ramp
 	)
 	amplitude_modulation = amplitude_modulation_func(timestamps)
 
