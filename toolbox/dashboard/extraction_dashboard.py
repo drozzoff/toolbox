@@ -11,13 +11,22 @@ import sys
 import numpy as np
 from numpy.typing import NDArray
 from dataclasses import dataclass, field
+from functools import wraps
 from typing import Callable, Optional, Any
 from pathlib import Path
 import pandas as pd
 import pickle as pk
 import datetime
 import xtrack as xt
+from toolbox.dashboard.datafield_specs import make_datafields
 
+
+def flatten_input(method):
+	@wraps(method)
+	def wrapper(self, values, *args, **kwargs):
+		values = self._flatten(values)
+		return method(self, values, *args, **kwargs)
+	return wrapper
 
 class DataBuffer:
 	"""
@@ -44,16 +53,16 @@ class DataBuffer:
 		# scaller
 		return [values]
 
-	def append(self, value):
-		_values = self._flatten(value)
-		self.recent_data = _values
-		self.data.extend(_values)
+	@flatten_input
+	def extend(self, values: list | NDArray):
+		self.recent_data = values
+		self.data.extend(values)
 		self.new_data = True
 
-	def extend(self, values: list | NDArray):
-		_values = self._flatten(values)
-		self.recent_data = _values
-		self.data.extend(_values)
+	@flatten_input
+	def append(self, value):
+		self.recent_data = value
+		self.data.append(value[0])
 		self.new_data = True
 
 	def clear(self):
@@ -70,21 +79,7 @@ class DataBuffer:
 
 	__repr__ = __str__
 
-@dataclass
-class DataField:
-	"""Simple class to store the dependances and state of the data field in the dashboard"""
-	buffer_dependance: list[str] = field(default_factory = list)
-	create_new_buffer: list[str] | None = None
-	callback: Optional[callable] = None
-	state: bool = False
-
-	plot_from: list[str] | None = None # list of the buffers that this data field is dependent upon for plotting
-
-	buffer_pointer: int = 0
-
-	plot_order: list[dict] | None = None # Description of the order traces are added to the plot
-
-class TrackingDashboard:
+class ExtractionDashboard:
 	"""
 	Class to manage the tracking dashboard.
 
@@ -124,543 +119,7 @@ class TrackingDashboard:
 
 	def _set_dependencies(self):
 
-		self.data_fields = {
-			'intensity': DataField(
-				buffer_dependance = [self.time_coord, 'Nparticles'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'Nparticles',
-						"settings": dict(
-							mode = "lines",
-							line = {"color": "blue"},
-							name = "Intensity in the ring",
-							showlegend = True
-						)
-					},
-				]
-			),
-			'ES_septum_anode_losses': DataField(
-				buffer_dependance = [self.time_coord, 'ES_septum_anode_loss_outside', 'x_extracted_at_ES', 'px_extracted_at_ES'],
-				create_new_buffer = ['ES_septum_anode_loss_inside', 'ES_septum_anode_loss_total'],
-				callback = self.calculate_total_loss_at_septum,
-				plot_from = [self.time_coord, 'ES_septum_anode_loss_inside', 'ES_septum_anode_loss_total', 'ES_septum_anode_loss_outside'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_total',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'color': 'green',
-								'width': 2,
-							},
-							name = "Total losses",
-							showlegend = True
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_outside',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'color': 'red',
-								'width': 2,
-							},
-							name = "Lost outside of the septum",
-							showlegend = True
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_inside',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'color': 'blue',
-								'width': 2,
-							},
-							name = "Lost inside of the septum",
-							showlegend = True
-						)
-					}
-
-				]
-			),
-			'ES_septum_anode_losses_accumulated': DataField(
-				buffer_dependance = [self.time_coord, 'ES_septum_anode_loss_outside', 'x_extracted_at_ES', 'px_extracted_at_ES'],
-				create_new_buffer = ['ES_septum_anode_loss_outside_accumulated', 'ES_septum_anode_loss_inside_accumulated', 'ES_septum_anode_loss_total_accumulated'],
-				callback = self.calculate_total_accumulated_loss_at_septum,
-				plot_from = [self.time_coord, 'ES_septum_anode_loss_outside_accumulated', 'ES_septum_anode_loss_inside_accumulated', 'ES_septum_anode_loss_total_accumulated'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_total_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'color': 'green',
-								'width': 2,
-							},
-							name = "Total losses",
-							showlegend = True
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_outside_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'color': 'red',
-								'width': 2,
-							},
-							name = "Lost outside",
-							showlegend = True
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_inside_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'color': 'blue',
-								'width': 2,
-							},
-							name = "Lost inside",
-							showlegend = True
-						)
-					}
-
-				]
-			),
-			'ES_septum_anode_losses_mixed_accumulated': DataField(
-				buffer_dependance = [
-					self.time_coord, 
-					'ES_septum_anode_loss_outside_C', 
-					'ES_septum_anode_loss_outside_He', 
-					'x_extracted_at_ES', 
-					'px_extracted_at_ES'
-				],
-				create_new_buffer = [
-					'ES_septum_anode_loss_outside_C_accumulated',
-					'ES_septum_anode_loss_outside_He_accumulated',
-					'ES_septum_anode_loss_inside_C_accumulated',
-					'ES_septum_anode_loss_inside_He_accumulated',
-					'ES_septum_anode_loss_total_C_accumulated',
-					'ES_septum_anode_loss_total_He_accumulated',
-					'ES_septum_anode_loss_total_accumulated'
-				],
-				callback = self.calculate_total_accumulated_loss_at_septum_mixed,
-				plot_from = [
-					self.time_coord, 
-					'ES_septum_anode_loss_outside_C_accumulated',
-					'ES_septum_anode_loss_outside_He_accumulated',
-					'ES_septum_anode_loss_inside_C_accumulated',
-					'ES_septum_anode_loss_inside_He_accumulated',
-					'ES_septum_anode_loss_total_C_accumulated',
-					'ES_septum_anode_loss_total_He_accumulated',
-					'ES_septum_anode_loss_total_accumulated'
-				],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_total_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'color': 'green',
-								'width': 2,
-							},
-							name = "Total losses",
-							showlegend = True
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_total_C_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'dash': "dash",
-								'color': 'green',
-								'width': 2,
-							},
-							name = "Total losses (C)",
-							showlegend = True
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_total_He_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'dash': "dashdot",
-								'color': 'green',
-								'width': 2,
-							},
-							name = "Total losses (He)",
-							showlegend = True
-						)
-					},
-					
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_outside_C_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'dash': 'dash',
-								'color': 'red',
-								'width': 2,
-							},
-							name = "Lost outside (C)",
-							showlegend = True
-						)
-					},
-
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_outside_He_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'dash': 'dashdot',
-								'color': 'red',
-								'width': 2,
-							},
-							name = "Lost outside (He)",
-							showlegend = True
-						)
-					},
-
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_inside_C_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'dash': 'dash',
-								'color': 'blue',
-								'width': 2,
-							},
-							name = "Lost inside (C)",
-							showlegend = True
-						)
-					},
-
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_inside_He_accumulated',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'dash': 'dashdot',
-								'color': 'blue',
-								'width': 2,
-							},
-							name = "Lost inside (He)",
-							showlegend = True
-						)
-					},
-
-				]
-			),
-			'ES_septum_anode_losses_outside': DataField(
-				buffer_dependance = [self.time_coord, 'ES_septum_anode_loss_outside'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_outside',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'color': 'blue',
-								'width': 2,
-							},
-							name = "Lost outside of the septum",
-							showlegend = True
-						)
-					}
-				]
-			),
-			'ES_septum_anode_losses_inside': DataField(
-				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES'],
-				create_new_buffer = ['ES_septum_anode_loss_inside'],
-				callback = self.calculate_loss_inside_septum,
-				plot_from = [self.time_coord, 'ES_septum_anode_loss_inside'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'ES_septum_anode_loss_inside',
-						"settings": dict(
-							mode = 'lines',
-							line = {
-								'color': 'blue',
-								'width': 2,
-							},
-							name = "Lost inside of the septum",
-							showlegend = True
-						)
-					}
-				]
-			),
-			'spill': DataField(
-				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES'], 
-				create_new_buffer = ['spill'],
-				callback = self.calculate_spill,
-				plot_from = [self.time_coord, 'spill'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'spill',
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "blue"
-							),
-							name = "Spill"
-						)
-					},
-				]
-			),
-			'spill_accumulated': DataField(
-				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES'], 
-				create_new_buffer = ['spill_accumulated'],
-				callback = self.calcualte_spill_accumulated,
-				plot_from = [self.time_coord, 'spill_accumulated'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'spill_accumulated',
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "blue"
-							),
-							name = "Spill"
-						)
-					},
-				]
-			),
-			'spill_mixed': DataField(
-				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
-				create_new_buffer = ['spill_C', 'spill_He'],
-				callback = self.calculate_spill_mixed,
-				plot_from = [self.time_coord, 'spill_C', 'spill_He'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'spill_C',
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "blue"
-							),
-							name = "Carbon"
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": 'spill_He',
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "red"
-							),
-							name = "Helium"
-						)
-					},
-				]
-			),
-			'spill_mixed_integrated': DataField(
-				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
-				create_new_buffer = ['_spill_C_accumulated', '_spill_He_accumulated', 'spill_C_integrated', 'spill_He_integrated'],
-				callback = self.calculate_spill_mixed_integrated,
-				plot_from = [self.time_coord, 'spill_C_integrated', 'spill_He_integrated'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'spill_C_integrated',
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "blue"
-							),
-							name = "Carbon"
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": 'spill_He_integrated',
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "red"
-							),
-							name = "Helium"
-						)
-					},
-				]
-			),
-			'spill_mixed_accumulated': DataField(
-				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
-				create_new_buffer = ['spill_C_accumulated', 'spill_He_accumulated'],
-				callback = self.calculate_spill_mixed_accumulated,
-				plot_from = [self.time_coord, 'spill_C_accumulated', 'spill_He_accumulated'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'spill_C_accumulated',
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "blue"
-							),
-							name = "Carbon"
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": 'spill_He_accumulated',
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "red"
-							),
-							name = "Helium"
-						)
-					},
-				]
-			),
-			'spill_mixed_diff_accumulated': DataField(
-				buffer_dependance = [self.time_coord, 'x_extracted_at_ES', 'px_extracted_at_ES', 'ion'], 
-				create_new_buffer = ['He_C_difference_accumulated', '_C_accumulated', '_He_accumulated'],
-				callback = self.calculate_spill_mixed_diff_accumulated,
-				plot_from = [self.time_coord, 'He_C_difference_accumulated'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": 'He_C_difference_accumulated',
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "green"
-							),
-							name = "Helium / Carbon"
-						)
-					},
-				]
-			),
-			'ES_entrance_phase_space': DataField(
-				buffer_dependance = ['x_extracted_at_ES', 'px_extracted_at_ES'],
-				plot_order = [
-					{
-						"x": 'x_extracted_at_ES',
-						"y": 'px_extracted_at_ES',
-						"settings": dict(
-							mode = 'markers',
-							marker = dict(
-								size = 5,
-								color = 'black',
-								opacity = 0.3
-							),
-							name = "Extracted particles"
-						)
-					}
-				]
-			),
-			'MS_entrance_phase_space': DataField(
-				buffer_dependance = ['x_extracted_at_MS', 'px_extracted_at_MS'],
-				plot_order = [
-					{
-						"x": 'x_extracted_at_MS',
-						"y": 'px_extracted_at_MS',
-						"settings": dict(
-							mode = 'markers',
-							marker = dict(
-								size = 5,
-								color = 'black',
-								opacity = 0.3
-							),
-							name = "Extracted particles"
-						)
-					}
-				]
-			),
-			'separatrix': DataField(
-				buffer_dependance = ['x_stable', 'px_stable', 'x_unstable', 'px_unstable'],
-				plot_order = [
-					{
-						"x": 'x_unstable',
-						"y": 'px_unstable',
-						"settings": dict(
-							mode = 'markers',
-							marker = dict(
-								size = 5,
-								color = 'red',
-							),
-							name = "Unstable particle",
-							showlegend = True
-						)
-					},
-					{
-						"x": 'x_stable',
-						"y": 'px_stable',
-						"settings": dict(
-							mode = 'markers',
-							marker = dict(
-								size = 5,
-								color = 'green',
-							),
-							name = "Stable particle",
-							showlegend = True
-						)
-					}
-				]
-			),
-			'biomed_data': DataField(
-				buffer_dependance = [self.time_coord, 'IC1', 'IC2', 'IC3'],
-				plot_order = [
-					{
-						"x": self.time_coord,
-						"y": "IC3",
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "green",
-							),
-							name = "IC3"
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": "IC2",
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "red",
-							),
-							name = "IC2"
-						)
-					},
-					{
-						"x": self.time_coord,
-						"y": "IC1",
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color =  "blue",
-							),
-							name = "IC1"
-						)
-					},
-				]
-			)
-		}
+		self.data_fields = make_datafields(self)
 
 		self.data_to_expect, self.data_buffer = [], {}
 		self.callbacks = []
@@ -687,26 +146,6 @@ class TrackingDashboard:
 			# storing the callbacks list separately
 			if self.data_fields[data_key].callback is not None:
 				self.callbacks.append(self.data_fields[data_key].callback)
-		
-	def calculate_loss_inside_septum(self, append_to_buffer = True): 		
-		x = np.array(self.data_buffer['x_extracted_at_ES'].recent_data)
-		px = np.array(self.data_buffer['px_extracted_at_ES'].recent_data)
-
-		threshold = -0.055 - (px + 7.4e-3)**2  / (2 * 1.7857e-3)
-		lost_inside_septum_mask = x > threshold
-		
-#		if any(lost_inside_septum_mask):
-#			print(f"Entered ES septum")
-#			print(f"x = {x}")
-#			print(f"px = {px}")
-#			print(f"Threshold based on px: {threshold}")
-#			print(f"Lost mask {lost_inside_septum_mask}")
-#			print()
-
-		if append_to_buffer:
-			self.data_buffer['ES_septum_anode_loss_inside'].append(sum(lost_inside_septum_mask))
-		
-		return lost_inside_septum_mask
 
 	def calculate_total_loss_at_septum(self):
 		# the bot check is solely for the case where we plot the total loss including the other 
@@ -1596,11 +1035,6 @@ class TrackingDashboard:
 				elif mode == "file":
 					# We read a file which is `xt.Particles` object, so we have to extract the 
 					# data in the proper format for the buffers
-					
-					print(self.data_to_monitor)
-					print(self.data_to_expect)
-
-					
 
 					# The data put in the buffers should depend on the data fields requested
 					with open(filepath, 'rb') as fid:
@@ -1771,7 +1205,7 @@ class TrackingDashboard:
 			sys.exit(0)
 
 if __name__ == "__main__":
-	test = TrackingDashboard(
+	test = ExtractionDashboard(
 		port = 35235, 
 		data_to_monitor = [
 			"intensity", 
