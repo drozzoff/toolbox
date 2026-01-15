@@ -3,21 +3,19 @@ from dash import dcc, html, no_update, MATCH
 from dash.dependencies import Output, Input, State
 from flask_compress import Compress
 import plotly.graph_objs as go
-from plotly.subplots import make_subplots
 import threading
 import socket
 import json
 import sys
 import numpy as np
 from numpy.typing import NDArray
-from dataclasses import dataclass, field
 from functools import wraps
-from typing import Callable, Optional, Any
 from pathlib import Path
 import pandas as pd
 import pickle as pk
 import datetime
 import xtrack as xt
+
 from toolbox.dashboard.datafield_specs import make_datafields
 
 
@@ -50,7 +48,7 @@ class DataBuffer:
 		if isinstance(values, list):
 			return values
 
-		# scaller
+		# scallar
 		return [values]
 
 	@flatten_input
@@ -121,24 +119,23 @@ class ExtractionDashboard:
 
 		self.data_fields = make_datafields(self)
 
-		self.data_to_expect, self.data_buffer = [], {}
+		self.data_buffer = [], {}
 		self.callbacks = []
 
 		for data_key in self.data_to_monitor:
 			if data_key not in self.data_fields:
 				raise ValueError(f"Unsupported data requested: {data_key}. Supported data: {self.data_fields.keys()}")
 
-			# if needed creating buffers for data to read from the user
+			# Creating primary and secondary data buffers
 			for key in self.data_fields[data_key].buffer_dependance:
-				if not key in self.data_to_expect:
-					self.data_to_expect.append(key)
-			
+				if not key in self.data_buffer:
 					self.data_buffer[key] = DataBuffer()
 			
-			# creating additional buffers
-			if self.data_fields[data_key].create_new_buffer is not None:
-				for key in self.data_fields[data_key].create_new_buffer:
-					self.data_buffer[key] = DataBuffer()
+			# creating output buffers for the callbacks
+			if self.data_fields[data_key].output_buffers is not None:
+				for key in self.data_fields[data_key].output_buffers:
+					if not key in self.data_buffer:
+						self.data_buffer[key] = DataBuffer()
 
 			# activating the DataField
 			self.data_fields[data_key].state = True
@@ -146,191 +143,7 @@ class ExtractionDashboard:
 			# storing the callbacks list separately
 			if self.data_fields[data_key].callback is not None:
 				self.callbacks.append(self.data_fields[data_key].callback)
-
-	def calculate_total_loss_at_septum(self):
-		# the bot check is solely for the case where we plot the total loss including the other 
-		# losses aas well
-		append_to_buffer = False if 'ES_septum_anode_losses_inside' in self.data_to_monitor else True
-		res = sum(self.calculate_loss_inside_septum(append_to_buffer = append_to_buffer)) + self.data_buffer['ES_septum_anode_loss_outside'].recent_data[0]
-
-		self.data_buffer['ES_septum_anode_loss_total'].append(res)
-
-	def calculate_spill(self):
-		extracted = len(self.data_buffer['x_extracted_at_ES'].recent_data)
-		lost_inside = sum(self.calculate_loss_inside_septum(append_to_buffer = False))
-#		print(f"Extracted = {extracted}, Lost inside = {lost_inside}")
-		self.data_buffer['spill'].append(extracted - lost_inside)
-
-	def calcualte_spill_accumulated(self):
-		
-		print("inside of the puffer")
-
-		extracted = len(self.data_buffer['x_extracted_at_ES'].recent_data)
-		print(extracted)
-		lost_inside = sum(self.calculate_loss_inside_septum(append_to_buffer = False))
-
-		spill_prev = self.data_buffer['spill_accumulated'].data[-1] if self.data_buffer['spill_accumulated'].data else 0
-
-		self.data_buffer['spill_accumulated'].append(extracted - lost_inside + spill_prev)
-		
-	def calculate_spill_mixed(self):
-		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
-
-		# separating Carbon from Helium
-		ion = np.array(self.data_buffer['ion'].recent_data)
-		is_C = ion == "carbon"
-		is_He = ion == "helium"
-
-		extracted_C = is_C & ~lost_inside
-		extracted_He = is_He & ~lost_inside
-
-		self.data_buffer['spill_C'].append(sum(extracted_C))
-		self.data_buffer['spill_He'].append(sum(extracted_He))
 	
-	def calculate_spill_mixed_integrated(self):
-		
-		window_length = 100 # in turns
-		
-		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
-
-		# separating Carbon from Helium
-		ion = np.array(self.data_buffer['ion'].recent_data)
-		is_C = ion == "carbon"
-		is_He = ion == "helium"
-
-		extracted_C = is_C & ~lost_inside
-		extracted_He = is_He & ~lost_inside
-
-		spill_C_prev = self.data_buffer['_spill_C_accumulated'].data[-1] if self.data_buffer['_spill_C_accumulated'].data else 0
-		spill_He_prev = self.data_buffer['_spill_He_accumulated'].data[-1] if self.data_buffer['_spill_He_accumulated'].data else 0
-
-		self.data_buffer['_spill_C_accumulated'].append(sum(extracted_C) + spill_C_prev)
-		self.data_buffer['_spill_He_accumulated'].append(sum(extracted_He) + spill_He_prev)
-
-		start, end = 0, len(self.data_buffer['_spill_C_accumulated'].data) - 1
-
-		if end < window_length - 1:
-			start = 0
-		else:
-			start = end - (window_length - 1)
-
-		self.data_buffer['spill_C_integrated'].append(self.data_buffer['_spill_C_accumulated'].data[-1] - self.data_buffer['_spill_C_accumulated'].data[start])
-		self.data_buffer['spill_He_integrated'].append(self.data_buffer['_spill_He_accumulated'].data[-1] - self.data_buffer['_spill_He_accumulated'].data[start])
-
-	def calculate_spill_mixed_accumulated(self):
-		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
-
-		# separating Carbon from Helium
-		ion = np.array(self.data_buffer['ion'].recent_data)
-		is_C = ion == "carbon"
-		is_He = ion == "helium"
-
-		extracted_C = is_C & ~lost_inside
-		extracted_He = is_He & ~lost_inside
-
-		spill_C_prev = self.data_buffer['spill_C_accumulated'].data[-1] if self.data_buffer['spill_C_accumulated'].data else 0
-		spill_He_prev = self.data_buffer['spill_He_accumulated'].data[-1] if self.data_buffer['spill_He_accumulated'].data else 0
-
-		self.data_buffer['spill_C_accumulated'].append(sum(extracted_C) + spill_C_prev)
-		self.data_buffer['spill_He_accumulated'].append(sum(extracted_He) + spill_He_prev)
-
-	def calculate_total_accumulated_loss_at_septum(self):
-		
-		lost_inside_before = self.data_buffer['ES_septum_anode_loss_inside_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_inside_accumulated'].data else 0
-		lost_outside_before = self.data_buffer['ES_septum_anode_loss_outside_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_outside_accumulated'].data else 0
-
-		lost_inside_at_last_turn = sum(self.calculate_loss_inside_septum(append_to_buffer = False))
-		lost_outside_at_last_turn = self.data_buffer['ES_septum_anode_loss_outside'].recent_data[0]
-
-		self.data_buffer['ES_septum_anode_loss_outside_accumulated'].append(lost_outside_before + lost_outside_at_last_turn)
-		self.data_buffer['ES_septum_anode_loss_inside_accumulated'].append(lost_inside_before + lost_inside_at_last_turn)
-
-		self.data_buffer['ES_septum_anode_loss_total_accumulated'].append(
-			self.data_buffer['ES_septum_anode_loss_outside_accumulated'].data[-1] + self.data_buffer['ES_septum_anode_loss_inside_accumulated'].data[-1]
-		)
-
-	def calculate_total_accumulated_loss_at_septum_mixed(self):
-
-		lost_inside_before_C = self.data_buffer['ES_septum_anode_loss_inside_C_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_inside_C_accumulated'].data else 0
-		lost_outside_before_C = self.data_buffer['ES_septum_anode_loss_outside_C_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_outside_C_accumulated'].data else 0
-
-		lost_inside_before_He = self.data_buffer['ES_septum_anode_loss_inside_He_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_inside_He_accumulated'].data else 0
-		lost_outside_before_He = self.data_buffer['ES_septum_anode_loss_outside_He_accumulated'].data[-1] if self.data_buffer['ES_septum_anode_loss_outside_He_accumulated'].data else 0
-
-		lost_outside_at_last_turn_C = self.data_buffer['ES_septum_anode_loss_outside_C'].recent_data[0]
-		lost_outside_at_last_turn_He = self.data_buffer['ES_septum_anode_loss_outside_He'].recent_data[0]
-
-		lost_inside_at_last_turn = self.calculate_loss_inside_septum(append_to_buffer = False)
-
-		ion = np.array(self.data_buffer['ion'].recent_data)
-		is_C = ion == "carbon"
-		is_He = ion == "helium"
-
-		lost_inside_at_last_turn_C = is_C & lost_inside_at_last_turn
-		lost_inside_at_last_turn_He = is_He & lost_inside_at_last_turn
-
-		
-
-		# lost inside
-		self.data_buffer['ES_septum_anode_loss_inside_C_accumulated'].append(lost_inside_before_C + int(sum(lost_inside_at_last_turn_C)))
-		self.data_buffer['ES_septum_anode_loss_inside_He_accumulated'].append(lost_inside_before_He + int(sum(lost_inside_at_last_turn_He)))
-
-		# lost outside
-		self.data_buffer['ES_septum_anode_loss_outside_C_accumulated'].append(lost_outside_before_C + lost_outside_at_last_turn_C)
-		self.data_buffer['ES_septum_anode_loss_outside_He_accumulated'].append(lost_outside_before_He + lost_outside_at_last_turn_He)
-
-		# total
-		self.data_buffer['ES_septum_anode_loss_total_C_accumulated'].append(
-			self.data_buffer['ES_septum_anode_loss_outside_C_accumulated'].data[-1] + self.data_buffer['ES_septum_anode_loss_inside_C_accumulated'].data[-1]
-		)
-
-		self.data_buffer['ES_septum_anode_loss_total_He_accumulated'].append(
-			self.data_buffer['ES_septum_anode_loss_outside_He_accumulated'].data[-1] + self.data_buffer['ES_septum_anode_loss_inside_He_accumulated'].data[-1]
-		)
-
-		self.data_buffer['ES_septum_anode_loss_total_accumulated'].append(
-			self.data_buffer['ES_septum_anode_loss_total_C_accumulated'].data[-1] + self.data_buffer['ES_septum_anode_loss_total_He_accumulated'].data[-1]
-		)
-
-#		print(f"Total accumulated losses")
-#		print(self.data_buffer['ES_septum_anode_loss_total_accumulated'])
-
-
-	def calculate_spill_mixed_diff_accumulated(self):
-		lost_inside = self.calculate_loss_inside_septum(append_to_buffer = False)
-
-		# separating Carbon from Helium
-		ion = np.array(self.data_buffer['ion'].recent_data)
-		is_C = ion == "carbon"
-		is_He = ion == "helium"
-
-		extracted_C = is_C & ~lost_inside
-		extracted_He = is_He & ~lost_inside
-
-		if not self.data_buffer['_C_accumulated'].data:
-			self.data_buffer['_C_accumulated'].append(0)
-		
-		if not self.data_buffer['_He_accumulated'].data:
-			self.data_buffer['_He_accumulated'].append(0)
-
-		C_accumulated = self.data_buffer['_C_accumulated'].data[0] + sum(extracted_C)
-		He_accumulated = self.data_buffer['_He_accumulated'].data[0] + sum(extracted_He)
-
-#		print(f"C_accumulated = {C_accumulated}")
-#		print(f"He_accumulated = {He_accumulated}")
-#		print(f"sum(extracted_C) = {sum(extracted_C)}")
-#		print(f"sum(extracted_He) = {sum(extracted_He)}")
-#		print()
-
-		if C_accumulated != 0:
-			self.data_buffer['He_C_difference_accumulated'].append(He_accumulated / C_accumulated)
-		else:
-			self.data_buffer['He_C_difference_accumulated'].append(0)
-
-		self.data_buffer['_C_accumulated'].data[0] = C_accumulated
-		self.data_buffer['_He_accumulated'].data[0] = He_accumulated
-
-
 	def _clear_buffer(self):
 		# resetting the buffers in the memory
 		with self._buflock:
@@ -433,308 +246,7 @@ class ExtractionDashboard:
 				**tmp['settings']
 			))
 
-		match key:
-			case 'intensity': 
-				fig.update_layout(
-					title = 'Intensity',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Intensity [a.u.]',
-					width = 1800,
-					height = 400,
-				)
-			
-			case 'ES_septum_anode_losses':
-				fig.update_layout(
-					title = 'Es losses on the anode',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Lost [a.u.]',
-					width = 1800,
-					height = 400,
-				)
-
-			case 'ES_septum_anode_losses_accumulated':
-				fig.update_layout(
-					title = 'Accumulated losses on the anode',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Lost [a.u.]',
-					width = 1500,
-					height = 700,
-				)
-
-			case 'ES_septum_anode_losses_mixed_accumulated':
-				fig.update_layout(
-					title = 'Accumulated losses on the anode',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Lost [a.u.]',
-					width = 1500,
-					height = 700,
-				)
-			
-			case 'ES_septum_anode_losses_inside':			
-				fig.update_layout(
-					title = 'Es losses on the inside of anode',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Lost particles [a.u.]',
-					width = 1800,
-					height = 400,
-				)
-			
-			case 'ES_septum_anode_losses_outside':			
-				fig.update_layout(
-					title = 'Es losses on the outside of anode',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Lost particles [a.u.]',
-					width = 1800,
-					height = 400,
-				)
-		
-			case 'spill':
-				if self.time_coord == 'time':
-					fig.update_xaxes(
-						type = "date",
-						tickformat = "%H:%M:%S",
-						tickangle = 0,
-						showgrid = True,
-					)
-
-				fig.update_layout(
-					title = 'Spill',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Spill [a.u.]',
-					width = 2250,
-					height = 400,
-					showlegend = False
-				)
-			
-			case 'spill_accumulated':
-				if self.time_coord == 'time':
-					fig.update_xaxes(
-						type = "date",
-						tickformat = "%H:%M:%S",
-						tickangle = 0,
-						showgrid = True,
-					)
-
-				fig.update_layout(
-					title = 'Spill accumulated',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Spill [a.u.]',
-					width = 1200,
-					height = 700,
-					showlegend = False
-				)
-			
-			case 'spill_mixed':
-
-				if self.time_coord == 'time':
-					fig.update_xaxes(
-						type = "date",
-						tickformat = "%H:%M:%S",
-						tickangle = 0,
-						showgrid = True,
-					)
-				
-				fig.update_layout(
-					title = 'Spill, mixed beam',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Spill',
-					width = 2250,
-					height = 900,
-				)
-
-			case 'spill_mixed_accumulated':
-
-				if self.time_coord == 'time':
-					fig.update_xaxes(
-						type = "date",
-						tickformat = "%H:%M:%S",
-						tickangle = 0,
-						showgrid = True,
-					)
-				
-				fig.update_layout(
-					title = 'Accumulated spill, mixed beam',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Spill',
-					width = 1400,
-					height = 700,
-				)
-
-			case 'spill_mixed_integrated':
-				if self.time_coord == 'time':
-					fig.update_xaxes(
-						type = "date",
-						tickformat = "%H:%M:%S",
-						tickangle = 0,
-						showgrid = True,
-					)
-				
-				fig.update_layout(
-					title = 'Integrated spill, mixed beam',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Spill',
-					width = 1400,
-					height = 700,
-				)
-			
-			case 'spill_mixed_diff_accumulated':
-				if self.time_coord == 'time':
-					fig.update_xaxes(
-						type = "date",
-						tickformat = "%H:%M:%S",
-						tickangle = 0,
-						showgrid = True,
-					)
-				
-				fig.update_layout(
-					title = 'Extracted He / C, mixed beam',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Spill',
-					width = 1200,
-					height = 700,
-				)
-			
-			case 'biomed_data':
-				if self.time_coord == 'time':
-					fig.update_xaxes(
-						type = "date",
-						tickformat = "%H:%M:%S",
-						tickangle = 0,
-						showgrid = True,
-					)
-				
-				fig.update_layout(
-					title = 'Spill, biomed data',
-					xaxis_title = self.time_coord,
-					yaxis_title = 'Spill',
-					width = 2250,
-					height = 900,
-				)
-			
-			case 'ES_entrance_phase_space':
-				# Anode
-				fig.add_shape(
-					type = 'line',
-					x0 = -0.055, y0 = -0.0085,
-					x1 = -0.055, y1 = -0.005,
-					line = dict(
-						color = "LightSeaGreen",
-						width = 4,
-						dash = "dashdot",
-					),
-					name = "Anode",
-					showlegend = True
-				)
-
-				# Cathode
-				fig.add_shape(
-					type = 'path',
-					path = 'M -0.073 -0.0085 L -0.073 -0.005 L -0.083 -0.005 L -0.083 -0.0085 Z',
-					fillcolor = 'rgba(0, 0, 255, 0.3)',
-					line = dict(color = 'rgba(0, 0, 0, 0)'),
-					name = "Cathode",
-				)
-
-				# limits on ont being lost inside of the septum
-				px_loss_limit = np.linspace(-7.4e-3, -5.0e-3, 100).tolist()
-				x_loss_limit = list(map(lambda px: -0.055 - (px + 7.4e-3)**2 / (2 * 1.7857e-3), px_loss_limit))
-
-				path = f'M {x_loss_limit[0]},{px_loss_limit[0]} ' + ' '.join(
-					f'L {x},{y}' for x, y in zip(x_loss_limit[1:], px_loss_limit[1:])
-				)
-
-				fig.add_shape(
-					type = 'path',
-					path = path,
-					line = dict(
-						color = 'red',
-						dash = 'dash',
-						width = 2,
-						),
-					name = "Lost inside on the wires limit",
-					showlegend = True
-				)
-
-
-				fig.update_layout(
-					title = 'Phase space at ES entrance',
-					width = 800,
-					height = 700,
-					xaxis_title = 'x [m]',
-					yaxis_title = 'px [rad]',
-					showlegend = True
-				)
-			
-			case 'MS_entrance_phase_space':
-				fig.add_shape(
-					type = 'line',
-					x0 = 0.038, y0 = 0.003,
-					x1 = 0.038, y1 = 0.009,
-					line = dict(
-						color = "LightSeaGreen",
-						width = 4,
-						dash = "dashdot",
-					),
-					name = "Bottom of the septum",
-					showlegend = True
-				)
-
-				fig.add_shape(
-					type = 'line',
-					x0 = 0.1, y0 = 0.003,
-					x1 = 0.1, y1 = 0.009,
-					line = dict(
-						color = "SeaGreen",
-						width = 4,
-						dash = "dash",
-					),
-					name = "Top of the septum",
-					showlegend = True
-				)
-
-				fig.add_shape(
-					x0 = 0.069, y0 = 8e-3,
-					mode = 'markers',
-					marker = dict(
-						symbol = 'x',
-						size = 12,
-						color = 'red',
-					),
-					name = 'Septum centeer orbit',
-					showlegend = True
-				)
-
-				fig.update_layout(
-					title = 'Phase space at MS entrance',
-					width = 800,
-					height = 700,
-					xaxis_title = 'x [m]',
-					yaxis_title = 'px [rad]',
-					showlegend = True
-				)
-
-			case 'separatrix':
-				fig.add_shape(
-					type = 'line',
-					x0 = -0.055, y0 = -0.0085,
-					x1 = -0.055, y1 = 0.005,
-					line = dict(
-						color = "SeaGreen",
-						width = 4,
-						dash = "dash",
-					),
-					name = "ES Septum anode",
-					showlegend = True
-				)
-
-				fig.update_layout(
-					title = 'Separatrix',
-					width = 1000,
-					height = 800,
-					xaxis_title = 'x [m]',
-					yaxis_title = 'px [rad]',
-					showlegend = True
-				)
+		self.data_fields[key].plot_layout(fig)
 
 		return fig
 
