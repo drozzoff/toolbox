@@ -11,12 +11,13 @@ import numpy as np
 from numpy.typing import NDArray
 from functools import wraps
 from pathlib import Path
+import traceback
 import pandas as pd
 import pickle as pk
 import datetime
 import xtrack as xt
 
-from toolbox.dashboard.datafield_specs import make_datafields
+from toolbox.dashboard.datafield_specs import make_datafields, process_particles_file
 
 
 def flatten_input(method):
@@ -28,12 +29,11 @@ def flatten_input(method):
 
 class DataBuffer:
 	"""
-	`new_data` stays `True` after the data is appended and turns `False` when it is plotted
-	`recent_data` is reset to `[]` when the data is plotted
+	...
 	"""
 	def __init__(self):
 		self.data, self.recent_data = [], []
-		self.new_data = False
+		self.last_batch_id = -1
 
 	def _flatten(self, values):
 		# numpy scallar
@@ -52,26 +52,26 @@ class DataBuffer:
 		return [values]
 
 	@flatten_input
-	def extend(self, values: list | NDArray):
+	def extend(self, values: list | NDArray, *, batch_id: int):
 		self.recent_data = values
 		self.data.extend(values)
-		self.new_data = True
+		self.last_batch_id = batch_id
 
 	@flatten_input
-	def append(self, value):
+	def append(self, value, *, batch_id: int):
 		self.recent_data = value
 		self.data.append(value[0])
-		self.new_data = True
+		self.last_batch_id = batch_id
 
 	def clear(self):
 		self.data.clear()
 		self.recent_data = []
-		self.new_data = False
+		self.last_batch_id = -1
 
 	def __str__(self):
 		res = f"data = {self.data}\n"
-		res += f"Received data since last update = {self.new_data}\n"
-		if self.new_data:
+		res += f"Received data since last update = {self.last_batch_id == -1}\n"
+		if self.last_batch_id >= 0:
 			res += f"New data received = {self.recent_data}\n"
 		return res
 
@@ -89,6 +89,7 @@ class ExtractionDashboard:
 	"""
 
 	CHUNK_SIZE = 5000 # max number points to send
+	MAX_CALLBACK_LEVEL = 3
 	
 	def __init__(
 			self,
@@ -118,9 +119,11 @@ class ExtractionDashboard:
 	def _set_dependencies(self):
 
 		self.data_fields = make_datafields(self)
-
-		self.data_buffer = [], {}
 		self.callbacks = []
+
+		print(self.data_to_monitor)
+
+		buffer_keys = []
 
 		for data_key in self.data_to_monitor:
 			if data_key not in self.data_fields:
@@ -128,22 +131,65 @@ class ExtractionDashboard:
 
 			# Creating primary and secondary data buffers
 			for key in self.data_fields[data_key].buffer_dependance:
-				if not key in self.data_buffer:
-					self.data_buffer[key] = DataBuffer()
+				if not key in buffer_keys:
+					buffer_keys.append(key)
 			
 			# creating output buffers for the callbacks
 			if self.data_fields[data_key].output_buffers is not None:
 				for key in self.data_fields[data_key].output_buffers:
-					if not key in self.data_buffer:
-						self.data_buffer[key] = DataBuffer()
+					if not key in buffer_keys:
+						buffer_keys.append(key)
 
 			# activating the DataField
 			self.data_fields[data_key].state = True
 
-			# storing the callbacks list separately
+			# saving the callbacks
 			if self.data_fields[data_key].callback is not None:
-				self.callbacks.append(self.data_fields[data_key].callback)
-	
+				self.callbacks.append({
+					'name': data_key,
+					'level': self.data_fields[data_key].callback_level,
+					'callback': self.data_fields[data_key].callback
+				})
+		self.callbacks.sort(key = lambda c: c['level'])
+
+		# evaluating the data to be provided
+		# and the buffers to be created
+		# self.data_buffer contains the keys mixed of what user provides
+		# and what is automatically generated in a callback
+		datafields_keys = list(self.data_fields.keys())
+
+		buffers_to_create = buffer_keys.copy()
+
+		buffer_keys_masked = list(filter(lambda key: key in datafields_keys, buffer_keys))
+		print(f"Pass 0: {buffer_keys}")
+		print(f"\t not unique values = {buffer_keys_masked}")
+
+		index = 1
+		while buffer_keys_masked:
+			for key in buffer_keys_masked:
+				buffer_keys.remove(key)
+				buffer_keys.extend(self.data_fields[key].buffer_dependance)
+				buffers_to_create.extend(self.data_fields[key].buffer_dependance)
+
+			buffer_keys = list(set(buffer_keys))
+
+			print(f"Pass {index}: {buffer_keys}")
+			index += 1
+			buffer_keys_masked = list(filter(lambda key: key in datafields_keys, buffer_keys))
+			print(f"\t not unique values = {buffer_keys_masked}")
+
+			if index == 10:
+				raise Exception("Could not resolve dependencies.")
+		
+		self.data_to_expect = buffer_keys
+		buffers_to_create = list(set(buffers_to_create))
+
+		print(f"Data to expect = {self.data_to_expect}")
+		print(f"buffers to create = {buffers_to_create}")
+		
+		self.data_buffer = {key: DataBuffer() for key in buffers_to_create}
+
+
 	def _clear_buffer(self):
 		# resetting the buffers in the memory
 		with self._buflock:
@@ -154,8 +200,20 @@ class ExtractionDashboard:
 		for data_key in self.data_fields:
 			self.data_fields[data_key].buffer_pointer = 0	
 
-	def start_listener(self):
+	def _buffers_filled_properly(self, batch_id: int):
+		return all([self.data_buffer[key].last_batch_id == batch_id for key in self.data_to_expect])
 
+	def run_callbacks(self):
+		if not self._buffers_filled_properly(self.current_batch_id):
+			raise ValueError(f"There is missing data for the batch {self.current_batch_id}")
+		
+		for i in range(self.MAX_CALLBACK_LEVEL):
+			for callback in self.callbacks:
+				if callback['level'] == i:
+#					print(f"Running {callback['name']}")
+					callback['callback']()
+
+	def start_listener(self):
 		srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		self._listener_socket = srv
@@ -175,6 +233,7 @@ class ExtractionDashboard:
 				conn, addr = srv.accept()
 				print(f"[INFO] Connection from {addr}")
 				self._clear_buffer()
+				self.current_batch_id = 0
 
 				buffer = ''
 				try:
@@ -187,22 +246,15 @@ class ExtractionDashboard:
 							line, buffer = buffer.split('\n', 1)
 
 							incoming = json.loads(line)
-#							print(incoming)
 
 							with self._buflock:
 								for key in self.data_to_expect:
 									if key in incoming:
-										self.data_buffer[key].extend(incoming[key])
+										self.data_buffer[key].extend(incoming[key], batch_id = self.current_batch_id)
 								
-								for data_key in self.data_to_monitor:
-									# running callback on the data_key only when there is new data 
-									# in all the dependant data buffers
-
-									buffers_to_check = self.data_fields[data_key].buffer_dependance
-									res_list = [self.data_buffer[key].new_data for key in buffers_to_check]
-									
-									if all(res_list) and self.data_fields[data_key].callback is not None:
-										self.data_fields[data_key].callback()
+								self.run_callbacks()
+						
+						self.current_batch_id += 1
 
 				except json.JSONDecodeError as e:
 					print("[ERROR] Invalid JSON", e)
@@ -226,13 +278,10 @@ class ExtractionDashboard:
 			pass	
 
 	def plot_figure(self, key, **kwargs) -> go.Figure | None:
-
 		fig = go.Figure()
-
 		figure_config = self.data_fields[key].plot_order
 		
 		for i, tmp in enumerate(figure_config):
-
 			x = kwargs.get(tmp['x'], [])
 			y = kwargs.get(tmp['y'], [])
 
@@ -254,16 +303,12 @@ class ExtractionDashboard:
 		"""
 		Start a dash server
 		"""
-
 		self.app = dash.Dash("Slow extraction w/ xsuite", title = "Extraction dashboard")
 		Compress(self.app.server)
 
 		intro_text = '''
 		### SIS18 slow extraction dashboard.
 		'''
-
-		# Building tabs based on the data requested
-
 		divs = {
 			'turn_dependent_data': [],
 			'phase_space': [],
@@ -273,7 +318,7 @@ class ExtractionDashboard:
 		for key in self.data_to_monitor:
 			
 			# Tab 1 - Turn dependent data
-			if key in {'intensity', 'ES_septum_anode_losses', 'ES_septum_anode_losses_accumulated', 'ES_septum_anode_losses_mixed_accumulated', 'ES_septum_anode_losses_inside', 'ES_septum_anode_losses_outside', 'spill', 'spill_mixed', 'spill_accumulated', 'spill_mixed_accumulated', 'spill_mixed_integrated', 'spill_mixed_diff_accumulated'}:
+			if self.data_fields[key].category == "Turn By Turn":
 				divs['turn_dependent_data'].append(
 					html.Div([
 						dcc.Graph(
@@ -284,7 +329,7 @@ class ExtractionDashboard:
 				)
 			
 			# Tab 2 - Phase space
-			if key in {'ES_entrance_phase_space', 'MS_entrance_phase_space'}:
+			if self.data_fields[key].category == "Phase Space":
 				divs['phase_space'].append(
 					html.Div([
 						dcc.Graph(
@@ -295,7 +340,7 @@ class ExtractionDashboard:
 				)
 			
 			# Tab 3 - Separatrix
-			if key in {'separatrix'}:
+			if self.data_fields[key].category == "Separatrix":
 				divs['separatrix'].append(
 					html.Div([
 						dcc.Graph(
@@ -304,7 +349,7 @@ class ExtractionDashboard:
 						)
 					], style = {'display': 'flex', 'gap': '10px'}))
 
-			if key in {'biomed_data'}:
+			if self.data_fields[key].category == "Biomed":
 				divs['special'].append(
 					html.Div([
 						dcc.Graph(
@@ -314,12 +359,10 @@ class ExtractionDashboard:
 					], style = {'display': 'flex', 'gap': '10px'})
 				)
 
-
 		tabs = []
 		for key in divs:
 			if divs[key] != []:
 				tabs.append(dcc.Tab(label = key, children = divs[key]))
-
 
 		self.app.layout = html.Div([
 			dcc.Markdown(children = intro_text),
@@ -389,7 +432,6 @@ class ExtractionDashboard:
 			trace_bufs = df.plot_from or df.buffer_dependance
 
 			trace_indices = []
-
 			xs, ys = [], []
 
 			with self._buflock:
@@ -416,7 +458,6 @@ class ExtractionDashboard:
 
 					trace_indices.append(i)
 
-					
 				df.buffer_pointer = end
 
 			res = dict(x = xs, y = ys)
@@ -548,145 +589,23 @@ class ExtractionDashboard:
 					# We read a file which is `xt.Particles` object, so we have to extract the 
 					# data in the proper format for the buffers
 
+					print(f"Data to be provided: {self.data_to_expect}")
+
 					# The data put in the buffers should depend on the data fields requested
 					with open(filepath, 'rb') as fid:
 						self.read_from_file = xt.Particles.from_dict(pk.load(fid))
 					self.read_from_file.sort(by = 'at_turn', interleave_lost_particles = True)
 
-					print("Particles read")
-					print(self.read_from_file.get_table())
-
 					self._clear_buffer()		
 
-					max_turns = max(self.read_from_file.at_turn)
-					turns_list = list(range(max_turns + 1))
-					
-					# basic masks
-					lost_mask = self.read_from_file.state == 0
-					at_start = abs(self.read_from_file.s) < 1e-7
-					extracted_at_ES = lost_mask & at_start
-
-					# Nparticles buffer
-					if 'Nparticles' in self.data_to_expect:
-						if np.sum(lost_mask) > 0:
-							lost_particles = self.read_from_file.filter(lost_mask)
-							print("Particles lost in the tracking")
-							print(lost_particles.get_table())
-							particles_alive_for_turns = self.read_from_file._capacity - np.searchsorted(lost_particles.at_turn, turns_list, side = "left")
-						else:
-							particles_alive_for_turns = self.read_from_file._capacity * np.ones_like(turns_list)
-
-
-					# phase space buffer
-					if 'x_extracted_at_ES' in self.data_to_expect or 'px_extracted_at_ES' in self.data_to_expect:
-						if np.sum(extracted_at_ES) > 0:
-							lost_particles_at_ES_septum = self.read_from_file.filter(extracted_at_ES)
-						else:
-							lost_particles_at_ES_septum = None
-
-					# losses on the septum wires
-					if 'ES_septum_anode_loss_outside' in self.data_to_expect:
-						at_septum_end = self.read_from_file.s == 1.5
-						lost_at_septum_end = lost_mask & at_septum_end
-
-						if np.sum(lost_at_septum_end) > 0:
-							lost_particles_at_septum_end = self.read_from_file.filter(lost_at_septum_end)						
-							
-							print("Particles lost on the outside of a septum")
-							print(lost_particles_at_septum_end.get_table())
-
-							number_lost_particles_at_septum_end = np.bincount(
-								lost_particles_at_septum_end.at_turn,
-								minlength = max_turns
-							)
-						else: number_lost_particles_at_septum_end = np.zeros(max_turns)
-
-					# since I do not use callbacks from listener, I have to populate some buffers manually here
-					if 'ES_septum_anode_losses_accumulated' in self.data_to_monitor:
-						number_lost_particles_at_septum_end_accumulated = np.cumsum(number_lost_particles_at_septum_end)
-
-					if any(key in self.data_to_monitor for key in (
-						'ES_septum_anode_losses_inside', 
-						'ES_septum_anode_losses', 
-						'ES_septum_anode_losses_accumulated', 
-						'spill', 
-						'spill_accumulated'
-						)):
-						if lost_particles_at_ES_septum is not None:
-							x = lost_particles_at_ES_septum.x
-							px = lost_particles_at_ES_septum.px
-
-							threshold = -0.055 - (px + 7.4e-3)**2  / (2 * 1.7857e-3)
-							lost_inside_septum = x > threshold
-
-							if np.sum(lost_inside_septum) != 0:					
-								lost_particles_inside_of_septum = lost_particles_at_ES_septum.filter(lost_inside_septum)
-								
-								print("Particles lost on the wires inside of a septum")
-								print(lost_particles_inside_of_septum.get_table())
-
-								number_lost_particles_inside_of_septum = np.bincount(
-									lost_particles_inside_of_septum.at_turn,
-									minlength = max_turns
-								)
-							else: number_lost_particles_inside_of_septum = np.zeros(max_turns)
-						else:
-							number_lost_particles_inside_of_septum = np.zeros(max_turns)
-
-					if 'ES_septum_anode_losses' in self.data_to_monitor:
-						septum_losses = number_lost_particles_inside_of_septum + number_lost_particles_at_septum_end
-
-					if 'ES_septum_anode_losses_accumulated' in self.data_to_monitor:
-						number_lost_particles_inside_of_septum_accumulated = np.cumsum(number_lost_particles_inside_of_septum)
-						septum_losses_accumulated = number_lost_particles_inside_of_septum_accumulated + number_lost_particles_at_septum_end_accumulated
-
-					if any(key in self.data_to_monitor for key in ('spill', 'spill_accumulated')):
-						if lost_particles_at_ES_septum is not None:
-							entered_septum = np.bincount(
-								lost_particles_at_ES_septum.at_turn,
-								minlength = max_turns
-							)
-						else:
-							entered_septum = np.zeros(max_turns)
-						extracted_at_ES_at_turn = entered_septum - number_lost_particles_inside_of_septum
-
-					if 'spill_accumulated' in self.data_to_monitor:
-						extracted_at_ES_at_turn_acc = np.cumsum(extracted_at_ES_at_turn)
+					data_mapping = process_particles_file(self, self.read_from_file)
 
 					with self._buflock:
-						# data buffers
-						if 'turn' in self.data_to_expect:
-							self.data_buffer['turn'].extend(turns_list)
-
-						if 'Nparticles' in self.data_to_expect:
-							self.data_buffer['Nparticles'].extend(particles_alive_for_turns)
-
-						if 'x_extracted_at_ES' in self.data_to_expect and lost_particles_at_ES_septum is not None:
-							self.data_buffer['x_extracted_at_ES'].extend(lost_particles_at_ES_septum.x)
-
-						if 'px_extracted_at_ES' in self.data_to_expect and lost_particles_at_ES_septum is not None:
-							self.data_buffer['px_extracted_at_ES'].extend(lost_particles_at_ES_septum.px)
+						self.current_batch_id = 0
+						for key in data_mapping:
+							self.data_buffer[key].extend(data_mapping[key], batch_id = self.current_batch_id)
 						
-						if 'ES_septum_anode_loss_outside' in self.data_to_expect:
-							self.data_buffer['ES_septum_anode_loss_outside'].extend(number_lost_particles_at_septum_end)
-						
-						# data fields
-						if any(key in self.data_to_monitor for key in ('ES_septum_anode_losses_inside', 'ES_septum_anode_losses')):
-							self.data_buffer['ES_septum_anode_loss_inside'].extend(number_lost_particles_inside_of_septum)
-
-						if 'ES_septum_anode_losses_accumulated' in self.data_to_monitor:
-							self.data_buffer['ES_septum_anode_loss_outside_accumulated'].extend(number_lost_particles_at_septum_end_accumulated)
-							self.data_buffer['ES_septum_anode_loss_inside_accumulated'].extend(number_lost_particles_inside_of_septum_accumulated)
-							self.data_buffer['ES_septum_anode_loss_total_accumulated'].extend(septum_losses_accumulated)
-
-						if 'ES_septum_anode_losses' in self.data_to_monitor:
-							self.data_buffer['ES_septum_anode_loss_total'].extend(septum_losses)
-
-						if 'spill' in self.data_to_monitor:
-							self.data_buffer['spill'].extend(extracted_at_ES_at_turn)
-						
-						if 'spill_accumulated' in self.data_to_monitor:
-							self.data_buffer['spill_accumulated'].extend(extracted_at_ES_at_turn_acc)
+						self.run_callbacks()
 
 				elif mode == "file_biomed":
 					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
@@ -707,6 +626,7 @@ class ExtractionDashboard:
 
 			except Exception as e:
 				print(f"[ERROR] reading cycle {cycle_id}: {e}")
+				traceback.print_exc()
 				return no_update
 
 		try:

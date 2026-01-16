@@ -1,5 +1,5 @@
-import numpy as np
 from __future__ import annotations
+import numpy as np
 
 def intensity_layout(fig: go.Figure):
 	fig.update_layout(
