@@ -1,5 +1,3 @@
-import matplotlib
-import sys
 import matplotlib.pyplot as plt
 import json
 from matplotlib.gridspec import GridSpec
