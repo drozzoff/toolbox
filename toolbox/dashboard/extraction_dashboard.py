@@ -95,7 +95,7 @@ class ExtractionDashboard:
 			host: str = '127.0.0.1',
 			port: int = 0,
 			data_to_monitor: list[str] | str | None = None,
-			
+			**kwargs
 		):
 		self.profile = profile
 		self.time_coord = 'turn'
@@ -587,12 +587,12 @@ class ExtractionDashboard:
 
 				elif mode == "file":
 					with open(filepath, 'rb') as fid:
-						self.read_from_file = xt.Particles.from_dict(pk.load(fid))
-					self.read_from_file.sort(by = 'at_turn', interleave_lost_particles = True)
+						read_from_file = xt.Particles.from_dict(pk.load(fid))
+					read_from_file.sort(by = 'at_turn', interleave_lost_particles = True)
 
 					self._clear_buffer()		
 
-					data_mapping = self.profile.process_particles_file(self, self.read_from_file)
+					data_mapping = self.profile.process_particles_file(self, read_from_file)
 
 					with self._buflock:
 						self.current_batch_id = 0
