@@ -17,8 +17,6 @@ import pickle as pk
 import datetime
 import xtrack as xt
 
-from toolbox.dashboard.datafield_specs import make_datafields, process_particles_file
-
 
 def flatten_input(method):
 	@wraps(method)
@@ -93,11 +91,13 @@ class ExtractionDashboard:
 	
 	def __init__(
 			self,
+			profile,
 			host: str = '127.0.0.1',
 			port: int = 0,
-			data_to_monitor: list[str] | str | None = None
+			data_to_monitor: list[str] | str | None = None,
+			
 		):
-
+		self.profile = profile
 		self.time_coord = 'turn'
 
 		if host is None:
@@ -118,7 +118,7 @@ class ExtractionDashboard:
 
 	def _set_dependencies(self):
 
-		self.data_fields = make_datafields(self)
+		self.data_fields = self.profile.make_datafields(self)
 		self.callbacks = []
 
 		print(self.data_to_monitor)
@@ -586,19 +586,13 @@ class ExtractionDashboard:
 					return no_update
 
 				elif mode == "file":
-					# We read a file which is `xt.Particles` object, so we have to extract the 
-					# data in the proper format for the buffers
-
-					print(f"Data to be provided: {self.data_to_expect}")
-
-					# The data put in the buffers should depend on the data fields requested
 					with open(filepath, 'rb') as fid:
 						self.read_from_file = xt.Particles.from_dict(pk.load(fid))
 					self.read_from_file.sort(by = 'at_turn', interleave_lost_particles = True)
 
 					self._clear_buffer()		
 
-					data_mapping = process_particles_file(self, self.read_from_file)
+					data_mapping = self.profile.process_particles_file(self, self.read_from_file)
 
 					with self._buflock:
 						self.current_batch_id = 0
