@@ -7,7 +7,7 @@ DEPENDENCIES = [
 	'numpy',
 	'matplotlib',
 	'plotly',
-	'sklearn',
+	'scikit-learn',
 	'seaborn',
 	'flask-compress'
 ]
