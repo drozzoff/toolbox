@@ -22,7 +22,7 @@ setup(
 	python_requires = ">=3.7",
 	license = "MIT",
 	
-	packages = ["toolbox"],
+	packages = find_packages(include = ["toolbox", "toolbox.*"]),
 	install_requires = DEPENDENCIES,
 	classifiers = [
 		"Intended Audience :: Science/Research",
