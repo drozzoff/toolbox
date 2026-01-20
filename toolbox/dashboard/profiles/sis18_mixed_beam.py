@@ -23,6 +23,7 @@ class SIS18_mixed_beam_Profile:
 			buffer_dependance = ['turn', 'extracted_at_ES:x', 'extracted_at_ES:px', 'extracted_at_ES:at_turn', 'extracted_at_ES:ion'], 
 			output_buffers = ['spill:ion1'],
 			callback = partial(ion_spill_callback, dashboard, 1),
+			callback_level = 0,
 			plot_from = ['turn', 'spill:ion1'],
 			plot_order = [
 				{
@@ -44,6 +45,7 @@ class SIS18_mixed_beam_Profile:
 			buffer_dependance = ['turn', 'extracted_at_ES:x', 'extracted_at_ES:px', 'extracted_at_ES:at_turn', 'extracted_at_ES:ion'], 
 			output_buffers = ['spill:ion2'],
 			callback = partial(ion_spill_callback, dashboard, 2),
+			callback_level = 0,
 			plot_from = ['turn', 'spill:ion2'],
 			plot_order = [
 				{
@@ -64,6 +66,7 @@ class SIS18_mixed_beam_Profile:
 		res['spill:mixed'] =  DataField(
 			buffer_dependance = ['turn', 'spill:ion1', 'spill:ion2'], 
 			callback = partial(mixed_spill_callback, dashboard),
+			callback_level = 1,
 			plot_from = ['turn', 'spill:ion1', 'spill:ion2'],
 			plot_order = [
 				{
@@ -96,6 +99,7 @@ class SIS18_mixed_beam_Profile:
 			buffer_dependance = ['turn', 'spill:ion1'], 
 			output_buffers = ['spill:ion1:accumulated'],
 			callback = partial(ion_accumulated_spill_callback, dashboard, 1),
+			callback_level = 1,
 			plot_from = ['turn', 'spill:ion1'],
 			plot_order = [
 				{
@@ -117,6 +121,7 @@ class SIS18_mixed_beam_Profile:
 			buffer_dependance = ['turn', 'spill:ion2'], 
 			output_buffers = ['spill:ion2:accumulated'],
 			callback = partial(ion_accumulated_spill_callback, dashboard, 2),
+			callback_level = 1,
 			plot_from = ['turn', 'spill:ion2'],
 			plot_order = [
 				{
@@ -137,6 +142,7 @@ class SIS18_mixed_beam_Profile:
 		res['spill:mixed:accumulated'] =  DataField(
 			buffer_dependance = ['turn', 'spill:ion1:accumulated', 'spill:ion2:accumulated'], 
 			callback = partial(mixed_accumulated_spill_callback, dashboard),
+			callback_level = 2,
 			plot_from = ['turn', 'spill:ion1:accumulated', 'spill:ion2:accumulated'],
 			plot_order = [
 				{
@@ -162,7 +168,7 @@ class SIS18_mixed_beam_Profile:
 					)
 				}
 			],
-			plot_layout = spill_layout,
+			plot_layout = accumulated_spill_layout,
 			category = "Turn By Turn"
 		)
 		return res
@@ -172,13 +178,15 @@ class SIS18_mixed_beam_Profile:
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
 		data_map = self.base_profile.process_particles_file(dashboard, particles)
-
+		print(particles.get_table())
+		chi = particles.chi
+		print(np.sum(chi == 1.0))
 		# looping again to include the ion data buffer
 		for key in dashboard.data_to_expect:
 			if key == 'extracted_at_ES:ion':
 				ion_arr = np.zeros_like(particles.chi, dtype = int)
-				ion_arr[np.abs(particles.chi - ion1_chi) < 1e-7] = 1
-				ion_arr[np.abs(particles.chi - ion2_chi) < 1e-7] = 2
+				ion_arr[np.abs(particles.chi - self.ion1_chi) < 1e-7] = 1
+				ion_arr[np.abs(particles.chi - self.ion2_chi) < 1e-7] = 2
 				
 				data_map[key] = ion_arr
 
@@ -200,6 +208,9 @@ def ion_spill_callback(dashboard: ExtractionDashboard, ion_key = 1):
 	survived_inside_septum_at_turn = at_turn[~lost_inside_septum]
 
 	ion_id = np.array(dashboard.data_buffer['extracted_at_ES:ion'].recent_data)
+
+	print(np.sum(ion_id == 1))
+	print(np.sum(ion_id == 2))
 	ion_survived_inside_septum_at_turn = survived_inside_septum_at_turn[ion_id == ion_key]
 
 	ion_losses_at_turn = np.bincount(
