@@ -1,6 +1,8 @@
 from __future__ import annotations
 from functools import partial
 import numpy as np
+import xtrack as xt
+import pickle as pk
 from toolbox.dashboard.profiles.datafield import DataField
 
 
@@ -285,52 +287,17 @@ class SIS18Profile:
 				plot_layout = ES_entrance_phase_space_layout,
 				category = "Phase Space"
 			),
-			'biomed_data': DataField(
-				buffer_dependance = ['time', 'IC1', 'IC2', 'IC3'],
-				plot_order = [
-					{
-						"x": 'time',
-						"y": "IC3",
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "green",
-							),
-							name = "IC3"
-						)
-					},
-					{
-						"x": 'time',
-						"y": "IC2",
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color = "red",
-							),
-							name = "IC2"
-						)
-					},
-					{
-						"x": 'time',
-						"y": "IC1",
-						"settings": dict(
-							mode = "lines",
-							line = dict(
-								color =  "blue",
-							),
-							name = "IC1"
-						)
-					},
-				],
-				plot_layout = biomed_data_layout,
-				category = "Biomed"
-			),
 		}
 	
-	def process_particles_file(self, dashboard: ExtractionDashboard, particles: xt.Particles) -> dict:
+	def process_file(self, dashboard: ExtractionDashboard, filepath: str, **kwargs) -> dict:
 		"""
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
+		with open(filepath, 'rb') as fid:
+			particles = xt.Particles.from_dict(pk.load(fid))
+
+		particles.sort(by = 'at_turn', interleave_lost_particles = True)
+
 		max_turns = max(particles.at_turn)
 		turns_list = list(range(max_turns + 1))
 		
@@ -607,20 +574,4 @@ def ES_entrance_phase_space_layout(fig: go.Figure):
 		xaxis_title = 'x [m]',
 		yaxis_title = 'px [rad]',
 		showlegend = True
-	)
-
-def biomed_data_layout(fig: go.Figure):
-	fig.update_xaxes(
-		type = "date",
-		tickformat = "%H:%M:%S",
-		tickangle = 0,
-		showgrid = True,
-	)
-	
-	fig.update_layout(
-		title = 'Spill, biomed data',
-		xaxis_title = 'time',
-		yaxis_title = 'Spill',
-		width = 2250,
-		height = 900,
 	)

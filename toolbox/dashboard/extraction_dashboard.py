@@ -563,7 +563,6 @@ class ExtractionDashboard:
 				except Exception as e:
 					return [], None, f"Read error: {e}"
 				
-#				print(self.read_from_file)
 				return [0], 0, f"Loaded particles data."
 			
 			else:
@@ -585,13 +584,9 @@ class ExtractionDashboard:
 					return no_update
 
 				elif mode == "file":
-					with open(filepath, 'rb') as fid:
-						read_from_file = xt.Particles.from_dict(pk.load(fid))
-					read_from_file.sort(by = 'at_turn', interleave_lost_particles = True)
+					self._clear_buffer()
 
-					self._clear_buffer()		
-
-					data_mapping = self.profile.process_particles_file(self, read_from_file)
+					data_mapping = self.profile.process_file(self, filepath)
 
 					with self._buflock:
 						self.current_batch_id = 0
@@ -601,6 +596,7 @@ class ExtractionDashboard:
 						self.run_callbacks()
 
 				elif mode == "file_biomed":
+
 					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
 					print(single_cycle)
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 import numpy as np
 from functools import partial
+import xtrack as xt
+import pickle as pk
 from toolbox.dashboard.profiles.datafield import DataField
 from toolbox.dashboard.profiles.sis18 import SIS18Profile
 
@@ -173,10 +175,15 @@ class SIS18_mixed_beam_Profile:
 		)
 		return res
 
-	def process_particles_file(self, dashboard: ExtractionDashboard, particles: xt.Particles) -> dict:
+	def process_file(self, dashboard: ExtractionDashboard, filepath: str, **kwargs) -> dict:
 		"""
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
+		with open(filepath, 'rb') as fid:
+			particles = xt.Particles.from_dict(pk.load(fid))
+
+		particles.sort(by = 'at_turn', interleave_lost_particles = True)
+
 		data_map = self.base_profile.process_particles_file(dashboard, particles)
 		print(particles.get_table())
 		chi = particles.chi
