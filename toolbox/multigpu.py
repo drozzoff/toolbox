@@ -5,9 +5,9 @@ over multiple GPUs that are available to the user.
 
 import warnings
 import multiprocessing as mp
-from multiprocessing import shared_memory
-
+import tempfile
 import numpy as np
+import pickle as pk
 import xobjects as xo
 import xtrack as xt
 import time
@@ -21,17 +21,6 @@ def split_indices(n_elements: int, n_chuncks: int):
 	idx = np.cumsum([0] + sizes)
 	return [(idx[i], idx[i+1]) for i in range(n_chuncks)]
 
-def create_shared_array(name: str, n: int, dtype = np.float64):
-	itemsize = np.dtype(dtype).itemsize
-	shm = shared_memory.SharedMemory(name = name, create = True, size = n * itemsize)
-	arr = np.ndarray((n,), dtype = dtype, buffer = shm.buf)
-	return shm, arr
-
-def attach_shared_array(name: str, n: int, dtype = np.float64):
-	shm = shared_memory.SharedMemory(name = name, create = False)
-	arr = np.ndarray((n,), dtype = dtype, buffer = shm.buf)
-	return shm, arr
-
 def log_worker(t0, device, msg, *, verbose = True):
 	if not verbose:
 		return
@@ -41,15 +30,13 @@ def log_worker(t0, device, msg, *, verbose = True):
 
 def worker(
 	build_line: callable,
+	particles_filename: str,
 	device: str,
 	num_turns: int,
-	num_particles: int,
-	i0: int,
-	i1: int,
-	shm_info: dict,
-	verbose: bool = False,
-	progress_queue = None,
-	**kwargs
+	i0: int, # including
+	i1: int, # excluding
+	folder_to_save_particles: str,
+	verbose: bool = False
 	):
 	t0 = time.time()
 
@@ -64,22 +51,15 @@ def worker(
 
 	log_worker(t0, device, "Built tracker", verbose = verbose)
 
-	coords_to_track = {}
-	for coord in shm_info:
-		try:
-			__, full_array = attach_shared_array(shm_info[coord]['in_name'], num_particles)
-			coords_to_track[coord] = full_array[i0:i1].copy()
-		except KeyError:
-			pass
+	with open(particles_filename, 'rb') as fid:
+		main_beam = xt.Particles.from_dict(pk.load(fid), _context = current_context)
+	mask = (main_beam.particle_id >= i0) & (main_beam.particle_id < i1)
+	beam_chunk = main_beam.filter(mask)
 
-	log_worker(t0, device, "Prepared particles' coordinates", verbose = verbose)
-
-	particles_to_track = line_to_track.build_particles(_context = current_context, **coords_to_track)
-
-	log_worker(t0, device, "Created particles", verbose = verbose)
+	log_worker(t0, device, "Created particle beam", verbose = verbose)
 
 	line_to_track.track(
-		particles_to_track, 
+		beam_chunk, 
 		num_turns = num_turns,
 		time = True,
 		with_progress = verbose,
@@ -87,19 +67,10 @@ def worker(
 
 	log_worker(t0, device, f"Finished tracking | Track time = {line_to_track.time_last_track}", verbose = verbose)
 
-	for coord in shm_info:
-		try:
-			out_name = shm_info[coord]['out_name']
-			__, out_array = attach_shared_array(out_name, num_particles)
-			
-			dev_arr = getattr(particles_to_track, coord)
-			tracked_values = particles_to_track._context.nparray_from_context_array(dev_arr)
-
-			out_array[i0:i1] = tracked_values
-		except KeyError:
-			pass
-
-	log_worker(t0, device, "Extracted data to the shared memory", verbose = verbose)
+	with open(f"{folder_to_save_particles}/beam_chunk_{device}.pkl", 'wb') as fid:
+		pk.dump(p.to_dict(), fid)
+	
+	log_worker(t0, device, "Saved the chunk of the beam", verbose = verbose)
 
 def log_main(t0, msg, *, verbose = True):
 	if not verbose:
@@ -108,28 +79,14 @@ def log_main(t0, msg, *, verbose = True):
 	now = time.time() - t0
 	print(f"[main] {now:.6f} s: {msg}", flush = True)
 
-def _clean_shm(shm_info: dict, verbose = True):
-	for coord in shm_info:	
-		for prefix in {'in', 'out'}:
-			try:
-				shm_name = shm_info[coord][f"{prefix}_name"]
-				shm = shared_memory.SharedMemory(name = shm_name, create = False)
-				shm.close()
-				shm.unlink()
-				if verbose: print(f"--Cleaned {shm_name}")
-
-			except (FileNotFoundError, KeyError):
-				pass
-
 def track_multigpu(
-	particles: xt.Particles,
+	particles: xt.Particles | str,
 	*, 
 	line_constructor: callable, 
 	num_turns: int, 
-	num_gpus: int, 
-	with_progress = False, 
-	verbose: int = 1,
-	**kwargs):
+	num_gpus: int,
+	verbose: int = 1
+	):
 	"""
 	Runs tracking on GSI HPC with multiple GPUs.
 
@@ -172,72 +129,31 @@ def track_multigpu(
 		num_gpus = num_gpus_available
 
 	devices = devices[:num_gpus]
-
-	# accepted list of coordinates
-	_coordinates_list = ['x', 'px', 'y', 'py', 'zeta', 'delta']
-	_tracking_related_coordinates = ['s', 'at_turn', 'at_element', 'state']
-
 	verbose_worker = verbose > 1
 
 	log_main(t0, "Start up", verbose = verbose)
+	if isinstance(particles, xt.Particles):
+		temp_folder = tempfile.TemporaryDirectory()
+		folder_to_save_particles = temp_folder.name
+		main_beam_loc = f"{folder_to_save_particles}/main_beam.pkl"
+		with open(main_beam_loc, 'wb') as fid:
+			pk.dump(particles.to_dict(), fid)
+	
+	if isinstance(particles, str):
+		main_beam_loc = particles
 
-	# prebuild shm mapping
-	shm_info = {}
-	number_of_particles = len(particles.x)
+	log_main(t0, "Saved the beam in the memory", verbose = verbose)
 
-	for coord in _coordinates_list:
-		shm_info[coord] = {
-			'in_name': f"{coord}_shm_in",
-			'out_name': f"{coord}_shm_out",
-			'size': number_of_particles
-		}
-
-	for coord in _tracking_related_coordinates:
-		shm_info[coord] = {
-			'out_name': f"{coord}_shm_out",
-			'size': number_of_particles
-		}
-
-	log_main(t0, "Calculated a shared memory mapping", verbose = verbose)
-
-	# making sure, shared memo is not occupied
-	_clean_shm(shm_info, verbose)
-
-	log_main(t0, "Startup cleanup", verbose = verbose)
-
-	for coord in shm_info:
-		try:
-			__, arr = create_shared_array(shm_info[coord]['in_name'], number_of_particles, np.float64)
-			
-			data = getattr(particles, coord)
-			arr[:] = data
-		except KeyError:
-			pass
-		
-		try:
-			__, __ = create_shared_array(shm_info[coord]['out_name'], number_of_particles, np.float64)
-		except KeyError:
-			pass
-		
-	log_main(t0, "Set partcicles' data in a shared memory", verbose = verbose)
-
-	progress_queue = mp.Queue() if with_progress else None
-
-	ranges = split_indices(number_of_particles, num_gpus)
+	ranges = split_indices(particles._capacity, num_gpus)
 	procs = []
 	
-	worker_kwargs = {}
-	for key in {'nemitt_x', 'nemitt_y', 'method'}:
-		if key in kwargs:
-			worker_kwargs[key] = kwargs.get(key)
 	for device, (i0, i1) in zip(devices, ranges):
 		p = mp.Process(
 			target = worker,
-			args = (line_constructor, device, num_turns, number_of_particles, i0, i1, shm_info, verbose_worker, progress_queue),
-			kwargs = worker_kwargs
+			args = (line_constructor, main_beam_loc, device, num_turns, i0, i1, folder_to_save_particles, verbose_worker),
 		)
 		procs.append(p)
-	
+
 	log_main(t0, "Created workers' processes", verbose = verbose)
 
 	for i, p in enumerate(procs):
@@ -249,26 +165,22 @@ def track_multigpu(
 	__ = [p.join() for p in procs]
 	
 	log_main(t0, f"Processes joined", verbose = verbose)
-	
-	tracking_results = {}
-	for coord in _coordinates_list + _tracking_related_coordinates:
-		info = shm_info[coord]
-		__, out_arr = attach_shared_array(info['out_name'], number_of_particles)
-		tracking_results[coord] = np.array(out_arr)
+
+	tracked_beam = None
+	for device in devices:
+		with open(f"{folder_to_save_particles}/beam_chunk_{device}.pkl", 'rb') as fid:
+			beam_chunk = xt.Particles.from_dict(pk.load(fid))
+
+		if tracked_beam:
+			tracked_beam = xt.Particles.merge([tracked_beam, beam_chunk])
+		else:
+			tracked_beam = beam_chunk
 	
 	log_main(t0, f"Processed results", verbose = verbose)
-
-	_clean_shm(shm_info, verbose)
-	log_main(t0, f"Exit cleanup", verbose = verbose)
-
+	
 	log_main(t0, f"Finished", verbose = verbose)
 
-	return xt.Particles(
-		mass0 = particles.mass0, 
-		q0 = particles.q0,
-		gamma0 = particles.gamma0,
-		**tracking_results
-	)
+	return tracked_beam
 
 def line_constructor() -> xt.Line:
 

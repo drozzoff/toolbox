@@ -95,7 +95,6 @@ class ExtractionDashboard:
 			host: str = '127.0.0.1',
 			port: int = 0,
 			data_to_monitor: list[str] | str | None = None,
-			**kwargs
 		):
 		self.profile = profile
 		self.time_coord = 'turn'
