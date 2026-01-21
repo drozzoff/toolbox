@@ -175,16 +175,17 @@ class SIS18_mixed_beam_Profile:
 		)
 		return res
 
-	def process_file(self, dashboard: ExtractionDashboard, filepath: str, **kwargs) -> dict:
+	def process_file(self, dashboard: ExtractionDashboard, particles: xt.Particles | str, **kwargs) -> dict:
 		"""
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
-		with open(filepath, 'rb') as fid:
-			particles = xt.Particles.from_dict(pk.load(fid))
+		if isinstance(particles, str):
+			with open(particles, 'rb') as fid:
+				particles = xt.Particles.from_dict(pk.load(fid))
 
-		particles.sort(by = 'at_turn', interleave_lost_particles = True)
+			particles.sort(by = 'at_turn', interleave_lost_particles = True)
 
-		data_map = self.base_profile.process_particles_file(dashboard, particles)
+		data_map = self.base_profile.process_file(dashboard, particles)
 		print(particles.get_table())
 		chi = particles.chi
 		print(np.sum(chi == 1.0))

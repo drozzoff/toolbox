@@ -289,14 +289,15 @@ class SIS18Profile:
 			),
 		}
 	
-	def process_file(self, dashboard: ExtractionDashboard, filepath: str, **kwargs) -> dict:
+	def process_file(self, dashboard: ExtractionDashboard, particles: xt.Particles | str, **kwargs) -> dict:
 		"""
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
-		with open(filepath, 'rb') as fid:
-			particles = xt.Particles.from_dict(pk.load(fid))
+		if isinstance(particles, str):
+			with open(particles, 'rb') as fid:
+				particles = xt.Particles.from_dict(pk.load(fid))
 
-		particles.sort(by = 'at_turn', interleave_lost_particles = True)
+			particles.sort(by = 'at_turn', interleave_lost_particles = True)
 
 		max_turns = max(particles.at_turn)
 		turns_list = list(range(max_turns + 1))

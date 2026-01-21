@@ -586,7 +586,7 @@ class ExtractionDashboard:
 				elif mode == "file":
 					self._clear_buffer()
 
-					data_mapping = self.profile.process_file(self, filepath)
+					data_mapping = self.profile.process_file(self, filepath, cycle_id = cycle_id)
 
 					with self._buflock:
 						self.current_batch_id = 0
@@ -594,22 +594,6 @@ class ExtractionDashboard:
 							self.data_buffer[key].extend(data_mapping[key], batch_id = self.current_batch_id)
 						
 						self.run_callbacks()
-
-				elif mode == "file_biomed":
-
-					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
-					print(single_cycle)
-
-					self._clear_buffer()
-
-					with self._buflock:
-						
-						self.data_buffer['IC1'].extend(list(single_cycle['Y[0]'].values))
-						self.data_buffer['IC2'].extend(list(single_cycle['Y[1]'].values))
-						self.data_buffer['IC3'].extend(list(single_cycle['Y[2]'].values))
-
-						self.data_buffer['time'].extend(list(single_cycle.index.to_pydatetime()))
-
 
 				print(f"[INFO] Loaded cycle #{cycle_id}")
 
