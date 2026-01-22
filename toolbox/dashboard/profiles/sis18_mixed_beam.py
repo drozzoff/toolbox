@@ -14,7 +14,7 @@ class SIS18_mixed_beam_Profile:
 
 		self.base_profile = SIS18Profile()
 
-	name = "SIS18_mixed_beam"
+	name = "SIS18 KO mixed beam"
 	
 	def make_datafields(self, dashboard: ExtractionDashboard):
 		# reading the basic 

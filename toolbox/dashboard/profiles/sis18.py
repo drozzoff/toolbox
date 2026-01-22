@@ -10,7 +10,7 @@ class SIS18Profile:
 	def __init__(self):
 		pass
 
-	name = "SIS18"
+	name = "SIS18 KO"
 	def make_datafields(self, dashboard: ExtractionDashboard):
 		return {
 			'intensity': DataField(

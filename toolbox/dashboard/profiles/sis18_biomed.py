@@ -7,7 +7,7 @@ class SIS18_biomed_Profile:
 	def __init__(self):
 		pass
 
-	name = "SIS18biomed"
+	name = "SIS18 KO biomed"
 	def make_datafields(self, dashboard: ExtractionDashboard):
 		return{
 			'intensity': DataField(
