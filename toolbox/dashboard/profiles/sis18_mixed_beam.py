@@ -40,6 +40,7 @@ class SIS18_mixed_beam_Profile:
 					)
 				}
 			],
+			bin = dict(enabled = True, x = "middle", y = "sum"),
 			plot_layout = partial(spill_layout, title = "Spill, Ion 1"),
 			category = "Turn By Turn"
 		)
@@ -62,6 +63,7 @@ class SIS18_mixed_beam_Profile:
 					)
 				}
 			],
+			bin = dict(enabled = True, x = "middle", y = "sum"),
 			plot_layout = partial(spill_layout, title = "Spill, Ion 2"),
 			category = "Turn By Turn"
 		)
@@ -96,6 +98,7 @@ class SIS18_mixed_beam_Profile:
 					)
 				}
 			],
+			bin = dict(enabled = True, x = "middle", y = "sum"),
 			plot_layout = partial(spill_layout, title = "Spill, mixed"),
 			category = "Turn By Turn"
 		)
@@ -118,6 +121,7 @@ class SIS18_mixed_beam_Profile:
 					)
 				}
 			],
+			bin = dict(enabled = True, x = "last", y = "last"),
 			plot_layout = partial(accumulated_spill_layout, title = "Accumulated spill, Ion 1"),
 			category = "Turn By Turn"
 		)
@@ -140,6 +144,7 @@ class SIS18_mixed_beam_Profile:
 					)
 				}
 			],
+			bin = dict(enabled = True, x = "last", y = "last"),
 			plot_layout = partial(accumulated_spill_layout, title = "Accumulated spill, Ion 2"),
 			category = "Turn By Turn"
 		)
@@ -174,6 +179,7 @@ class SIS18_mixed_beam_Profile:
 					)
 				}
 			],
+			bin = dict(enabled = True, x = "last", y = "last"),
 			plot_layout = partial(accumulated_spill_layout, title = "Accumulated spill, mixed"),
 			category = "Turn By Turn"
 		)

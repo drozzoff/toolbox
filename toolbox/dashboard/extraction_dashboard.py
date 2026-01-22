@@ -14,9 +14,7 @@ from functools import wraps
 from pathlib import Path
 import traceback
 import pandas as pd
-import pickle as pk
 import datetime
-import xtrack as xt
 
 
 def flatten_input(method):
@@ -76,13 +74,40 @@ class DataBuffer:
 
 	__repr__ = __str__
 
+def _bin_array(arr, bin_length: int, how: str) -> list:
+	if not arr: return []
+	
+	bins_length = (len(arr) // bin_length) * bin_length
+	if bins_length == 0: return []
+	
+	if how == "first":
+		return arr[:bins_length:bin_length]
+	if how == "last":
+		return arr[bin_length - 1:bins_length:bin_length]
+	if how == "middle":
+		return arr[bin_length // 2:bins_length:bin_length]
+	
+	a = np.asarray(arr[:bins_length])
+
+	if not np.issubdtype(a.dtype, np.number):
+		raise TypeError(f"Numerical data expected, got {a.dtype}")
+
+	a_bined = a.astype(float, copy = False).reshape(-1, bin_length)
+	
+	if how == "sum":
+		return a_bined.sum(axis = 1).tolist()
+	if how == "mean":
+		return a_bined.mean(axis = 1).tolist()	
+	if how == "max":
+		return a_bined.max(axis = 1).tolist()
+	if how == "min":
+		return a_bined.min(axis = 1).tolist()
+	
+	raise ValueError(how)
+
 class ExtractionDashboard:
 	"""
 	Class to manage the tracking dashboard.
-
-	intensity_coord: str
-		Either "particles" or "current". Default is "particles".
-		
 	"""
 
 	CHUNK_SIZE = 5000 # max number points to send
@@ -194,7 +219,8 @@ class ExtractionDashboard:
 
 		# resetting the pointers in the dependent data fields
 		for data_key in self.data_fields:
-			self.data_fields[data_key].buffer_pointer = 0	
+			self.data_fields[data_key].buffer_pointer = 0
+			self.data_fields[data_key].buffer_pointer_bin = 0
 
 	def _buffers_filled_properly(self, batch_id: int):
 		return all([self.data_buffer[key].last_batch_id == batch_id for key in self.data_to_expect])
@@ -389,6 +415,19 @@ class ExtractionDashboard:
 					),
 				], style = {"display": "flex", "alignItems": "center", "gap": "0.5rem"}
 			),
+			html.Div([
+				html.Span("Bin length:", style = {"margin-right": "0.5rem", "font-weight": "bold"}),
+				dcc.Dropdown(
+					id = "bin-length",
+					options = [
+						{"label": str(x), "value": x}
+						for x in [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
+					],
+					value = 1,          # default = no binning
+					clearable = False,
+					style = {"width": "120px"},
+				),
+			], style = {"display": "flex", "alignItems": "center", "gap": "0.5rem"}),
 			html.Div(id = "xaxis-trigger", style = {"display": "none"}),
 			html.Div([
 				html.Div([
@@ -431,45 +470,82 @@ class ExtractionDashboard:
 			Input("refresh", "n_intervals"),
 			State("mode-switch", "value"),
 			State({"type":"stream-graph", "key": MATCH}, "id"),
+			State("bin-length", "value"),
 		)
-		def stream_data(n_intervals, mode, graph_id):
+		def stream_data(n_intervals, mode, graph_id, bin_length):
 			data_key = graph_id["key"]
 
 			df = self.data_fields[data_key]
+			bin_info = df.bin
+
 			trace_bufs = df.plot_from or df.buffer_dependance
 
 			trace_indices = []
 			xs, ys = [], []
 
 			with self._buflock:
-				ptr = df.buffer_pointer
 				total = len(self.data_buffer[trace_bufs[0]].data)
-
-				if ptr >= total:
-					return no_update
 				
-				end = min(ptr + self.CHUNK_SIZE, total)
-
-				for i, tmp in enumerate(self.data_fields[data_key].plot_order):
-					raw_x = self.data_buffer[tmp['x']].data[ptr:end]
-
-					if raw_x and isinstance(raw_x[0], datetime.datetime):
-						x_vals = [dt.isoformat() for dt in raw_x]
-					else:
-						x_vals = raw_x
-
-					y_vals = [float(y) for y in self.data_buffer[tmp['y']].data[ptr:end]] 
+				if not bin_info or not bin_info['enabled'] or bin_length <= 1:
+					ptr = df.buffer_pointer
+					if ptr >= total:
+						return no_update
 					
-					xs.append(x_vals)
-					ys.append(y_vals)
+					end = min(ptr + self.CHUNK_SIZE, total)
 
-					trace_indices.append(i)
+					for i, tmp in enumerate(df.plot_order):
+						raw_x = self.data_buffer[tmp['x']].data[ptr:end]
 
-				df.buffer_pointer = end
+						if raw_x and isinstance(raw_x[0], datetime.datetime):
+							x_vals = [dt.isoformat() for dt in raw_x]
+						else:
+							x_vals = raw_x
 
-			res = dict(x = xs, y = ys)
+						y_vals = [float(y) for y in self.data_buffer[tmp['y']].data[ptr:end]] 
+						
+						xs.append(x_vals)
+						ys.append(y_vals)
 
-			return res, trace_indices, total
+						trace_indices.append(i)
+
+					df.buffer_pointer = end
+
+					return dict(x = xs, y = ys), trace_indices, total
+
+				# binned streaming
+				else:
+					ptr = getattr(df, "buffer_pointer_bin", 0)
+					total = total // bin_length
+
+					if ptr >= total:
+						return no_update
+					
+					end = min(ptr + self.CHUNK_SIZE, total)
+
+					raw_start = ptr * bin_length
+					raw_end = end * bin_length
+
+					how_x = bin_info['x']
+					how_y = bin_info['y']
+
+					for i, tmp in enumerate(df.plot_order):
+						raw_x = self.data_buffer[tmp['x']].data[raw_start:raw_end]
+						x_vals = _bin_array(raw_x, bin_length, how_x)
+
+						if x_vals and isinstance(x_vals[0], datetime.datetime):
+							x_vals = [dt.isoformat() for dt in x_vals]
+
+						raw_y =  self.data_buffer[tmp['y']].data[raw_start:raw_end]
+						y_vals = _bin_array(raw_y, bin_length, how_y)
+						
+						xs.append(x_vals)
+						ys.append(y_vals)
+
+						trace_indices.append(i)
+
+					df.buffer_pointer_bin = end
+					return dict(x = xs, y = ys), trace_indices, total
+
 
 		@self.app.callback(
 			Output("listener-trigger", "children"),
@@ -612,17 +688,11 @@ class ExtractionDashboard:
 			sys.exit(0)
 
 if __name__ == "__main__":
-	test = ExtractionDashboard(
-		port = 35235, 
-		data_to_monitor = [
-			"intensity", 
-			"ES_septum_anode_losses",
-#			"spill",
-			"spill_mixed",
-			"ES_entrance_phase_space",
-#			"MS_entrance_phase_space",
-			"separatrix"
-		]
-	)
+	from toolbox.dashboard.profiles import SIS18Profile
 
+	test = ExtractionDashboard(
+		profile = SIS18Profile(),
+		port = 35235, 
+		data_to_monitor = ["intensity"]
+	)
 	test.run_dash_server()
