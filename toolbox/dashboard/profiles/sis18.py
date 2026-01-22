@@ -27,6 +27,7 @@ class SIS18Profile:
 						)
 					}
 				],
+				bin = dict(enabled = True, x = "middle", y = "mean"),
 				plot_layout = intensity_layout,
 				category = "Turn By Turn"
 			),
@@ -47,6 +48,7 @@ class SIS18Profile:
 						)
 					}
 				],
+				bin = dict(enabled = True, x = "middle", y = "sum"),
 				plot_layout = ES_outside_losses_layout,
 				category = "Turn By Turn"
 			),
@@ -71,6 +73,7 @@ class SIS18Profile:
 						)
 					}
 				],
+				bin = dict(enabled = True, x = "middle", y = "sum"),
 				plot_layout = ES_inside_losses_layout,
 				category = "Turn By Turn"
 			),
@@ -122,6 +125,7 @@ class SIS18Profile:
 					}
 
 				],
+				bin = dict(enabled = True, x = "middle", y = "sum"),
 				plot_layout = ES_losses_layout,
 				category = "Turn By Turn"
 			),
@@ -144,6 +148,7 @@ class SIS18Profile:
 						)
 					},
 				],
+				bin = dict(enabled = True, x = "middle", y = "sum"),
 				plot_layout = spill_layout,
 				category = "Turn By Turn"
 			),
@@ -166,6 +171,7 @@ class SIS18Profile:
 						)
 					},
 				],
+				bin = dict(enabled = True, x = "last", y = "last"),
 				plot_layout = accumulated_spill_layout,
 				category = "Turn By Turn"
 			),
@@ -190,6 +196,7 @@ class SIS18Profile:
 						)
 					}
 				],
+				bin = dict(enabled = True, x = "last", y = "last"),
 				plot_layout = accumulated_ES_losses_layout,
 				category = "Turn By Turn"
 			),
@@ -214,6 +221,7 @@ class SIS18Profile:
 						)
 					}
 				],
+				bin = dict(enabled = True, x = "last", y = "last"),
 				plot_layout = accumulated_ES_losses_layout,
 				category = "Turn By Turn"
 			),
@@ -264,6 +272,7 @@ class SIS18Profile:
 						)
 					}
 				],
+				bin = dict(enabled = True, x = "last", y = "last"),
 				plot_layout = accumulated_ES_losses_layout,
 				category = "Turn By Turn"
 			),

@@ -10,6 +10,7 @@ class DataField:
 	callback_level: int | None = None
 	state: bool = False
 	plot_from: list[str] | None = None # list of the buffers that this data field is dependent upon for plotting
+	bin: dict | None = None # Description of the binning to apply to the buffers when plotting
 	plot_layout: Optional[callable] = None
 
 	buffer_pointer: int = 0
