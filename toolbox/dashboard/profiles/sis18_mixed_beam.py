@@ -179,15 +179,15 @@ class SIS18_mixed_beam_Profile:
 		)
 		return res
 
+	def read_file(self, filename: str) -> xt.Particles:
+		return self.base_profile.read_file(filename)
+
 	def process_file(self, dashboard: ExtractionDashboard, particles: xt.Particles | str, **kwargs) -> dict:
 		"""
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
 		if isinstance(particles, str):
-			with open(particles, 'rb') as fid:
-				particles = xt.Particles.from_dict(pk.load(fid))
-
-			particles.sort(by = 'at_turn', interleave_lost_particles = True)
+			particles = self.read_file(particles)
 
 		data_map = self.base_profile.process_file(dashboard, particles)
 		

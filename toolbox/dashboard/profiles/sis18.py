@@ -23,7 +23,7 @@ class SIS18Profile:
 							mode = "lines",
 							line = {"color": "blue"},
 							name = "Intensity in the ring",
-							showlegend = True
+							showlegend = False
 						)
 					}
 				],
@@ -43,7 +43,7 @@ class SIS18Profile:
 								'width': 2,
 							},
 							name = "Lost outside of the septum",
-							showlegend = True
+							showlegend = False
 						)
 					}
 				],
@@ -67,7 +67,7 @@ class SIS18Profile:
 								'width': 2,
 							},
 							name = "Lost inside of the septum",
-							showlegend = True
+							showlegend = False
 						)
 					}
 				],
@@ -288,16 +288,21 @@ class SIS18Profile:
 				category = "Phase Space"
 			),
 		}
-	
+
+	def read_file(self, filename: str) -> xt.Particles:
+		with open(filename, 'rb') as fid:
+			particles = xt.Particles.from_dict(pk.load(fid))
+
+		particles.sort(by = 'at_turn', interleave_lost_particles = True)
+
+		return particles
+
 	def process_file(self, dashboard: ExtractionDashboard, particles: xt.Particles | str, **kwargs) -> dict:
 		"""
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
 		if isinstance(particles, str):
-			with open(particles, 'rb') as fid:
-				particles = xt.Particles.from_dict(pk.load(fid))
-
-			particles.sort(by = 'at_turn', interleave_lost_particles = True)
+			particles = self.read_file(particles)
 
 		max_turns = max(particles.at_turn)
 		turns_list = list(range(max_turns + 1))
@@ -313,7 +318,7 @@ class SIS18Profile:
 			if np.sum(extracted_at_ES) > 0:
 				lost_particles_at_ES_septum = particles.filter(extracted_at_ES)
 			else:
-				lost_particles_at_ES_septum = None
+				lost_particles_at_ES_septum = None # means no particles are lost
 		
 		data_mapping = {}
 

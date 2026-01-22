@@ -52,20 +52,26 @@ class SIS18_biomed_Profile:
 			),
 		}
 	
-	def process_file(self, dashboard: ExtractionDashboard, filepath: str, **kwargs):
+	def read_file(self, filename: str) -> pd.DataFrame:
+		return pd.read_parquet(filename)
 
-		data = pd.read_parquet(filepath)
+	def process_file(self, dashboard: ExtractionDashboard, data: pd.DataFrame | str, **kwargs):
+		if isinstance(data, str):
+			data = self.read_file(data)
 
-		cycle_id = kwargs.get(cycle_id, 0)
+		cycle_id = kwargs.get("cycle_id", 0)
 		single_cycle = data[data['cycle_id'] == cycle_id]
 		print(single_cycle)
 
-		data_mapping = {
-			'time': single_cycle.index.to_pydatetime(),
-			'IC1': single_cycle['Y[0]'],
-			'IC2': single_cycle['Y[1]'],
-			'IC3': single_cycle['Y[2]']
-		}
+		data_mapping = {}
+		for key in dashboard.data_to_expect:
+			if key == 'time':
+				data_mapping[key] = single_cycle.index.to_pydatetime()
+			
+			intensity_names = {'IC1': 'Y[0]', 'IC2': 'Y[1]', 'IC3': 'Y[2]'}
+			if key in intensity_names:	
+				data_mapping[key] = single_cycle[intensity_names[key]].values
+			
 		return data_mapping
 
 def biomed_data_layout(fig: go.Figure):
