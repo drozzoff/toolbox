@@ -7,6 +7,7 @@ import threading
 import socket
 import json
 import sys
+import os
 import numpy as np
 from numpy.typing import NDArray
 from functools import wraps
@@ -79,8 +80,6 @@ class ExtractionDashboard:
 	"""
 	Class to manage the tracking dashboard.
 
-	time_coord: str
-		Either "time" or "turn". Default is "turn".
 	intensity_coord: str
 		Either "particles" or "current". Default is "particles".
 		
@@ -97,7 +96,6 @@ class ExtractionDashboard:
 			data_to_monitor: list[str] | str | None = None,
 		):
 		self.profile = profile
-		self.time_coord = 'turn'
 
 		if host is None:
 			raise ValueError("Host cannot be `None`.")
@@ -188,7 +186,6 @@ class ExtractionDashboard:
 		
 		self.data_buffer = {key: DataBuffer() for key in buffers_to_create}
 
-
 	def _clear_buffer(self):
 		# resetting the buffers in the memory
 		with self._buflock:
@@ -265,7 +262,6 @@ class ExtractionDashboard:
 		self._listener_thread.start()
 	
 	def stop_listener(self):
-
 		if hasattr(self, '_stop_listener') and self._stop_listener:
 			return
 
@@ -302,7 +298,7 @@ class ExtractionDashboard:
 		"""
 		Start a dash server
 		"""
-		self.app = dash.Dash("Slow extraction w/ xsuite", title = "Extraction dashboard")
+		self.app = dash.Dash("Slow extraction@SIS18", title = "Extraction dashboard")
 		Compress(self.app.server)
 
 		intro_text = '''
@@ -366,41 +362,53 @@ class ExtractionDashboard:
 		self.app.layout = html.Div([
 			dcc.Markdown(children = intro_text),
 			html.Div(
+				f"Profile: {self.profile.name}",
+				id = "profile-banner",
+				style = {
+					"display": "inline-block",
+					"fontSize": "14px",
+					"fontWeight": "600",
+					"padding": "6px 12px",
+					"borderRadius": "999px",
+					"backgroundColor": "#e5ece2",
+					"border": "1px solid #d0d5dd",
+					"color": "#f83d30",
+				},
+			),
+			html.Div(
 				[
 					html.Span("Mode:", style = {"margin-right": "0.5rem", "font-weight": "bold"}),
 					dcc.RadioItems(
 						id = "mode-switch",
 						options = [
 							{"label": "Live", "value": "live"},
-							{"label": "From file", "value": "file"},
-							{"label": "Biomed", "value": "file_biomed"}
+							{"label": "From file", "value": "file"}
 						],
 						value = "live",
 						labelStyle = {"display": "inline-block", "margin-right": "1rem"}
 					),
 				], style = {"display": "flex", "alignItems": "center", "gap": "0.5rem"}
 			),
-			html.Div(
-				[
-					html.Span("Time coordinate:", style = {"margin-right": "0.5rem", "font-weight": "bold"}),
-					dcc.RadioItems(
-						id = "x-axis-choice",
-						options = [
-							{"label": "Turn", "value": "turn"},
-							{"label": "Time", "value": "time"},
-						],
-						value = "turn",
-						labelStyle = {"display": "inline-block", "margin-right": "1rem"},
-					)
-				], style = {"display": "flex", "alignItems": "center", "gap": "0.5rem"}
-			),
 			html.Div(id = "xaxis-trigger", style = {"display": "none"}),
 			html.Div([
-				dcc.Dropdown(
-					id = "file-selector", 
-					placeholder = "Select data file",
-					searchable = True,
-					style = {"width": "250px"}
+				html.Div([
+					dcc.Input(
+						id = "file-path",
+						type = "text",
+						placeholder = "Type a path",
+						debounce = False,
+						style = {"width": "320px"},
+					),
+					dcc.Dropdown(
+						id = "file-suggest",
+						options = [],
+						placeholder = "Suggestions",
+						searchable = True,
+						clearable = True,
+						style = {"width": "320px"},
+					),
+				],
+				style = {"display": "flex", "gap": "10px", "alignItems": "center"},
 				),
 				html.Button("Load file", id = "load-file-btn"),
 				html.Div(id = "load-status"),
@@ -463,29 +471,11 @@ class ExtractionDashboard:
 
 			return res, trace_indices, total
 
-
-		@self.app.callback(
-			Output("xaxis-trigger", "children"),
-			Input("x-axis-choice", "value"),
-		)
-		def _set_time_coord(choice):
-			self.time_coord = choice
-
-			self._clear_buffer()
-			self._set_dependencies()
-
-			if not choice in self.data_buffer:
-				self.data_buffer[choice] = DataBuffer()
-
-			print(f"[INFO] Set time coordinate to '{choice}'")
-			return ""
-
 		@self.app.callback(
 			Output("listener-trigger", "children"),
 			Input("mode-switch", "value"),
 		)
-		def _trigger_listener(mode):
-			
+		def _trigger_listener(mode):		
 			self._clear_buffer()
 
 			if mode == "live":
@@ -500,72 +490,83 @@ class ExtractionDashboard:
 			return ""
 
 		@self.app.callback(
+			Output("file-suggest", "options"),
+			Input("file-path", "value"),
+		)
+		def suggest_paths(text):
+			if not text:
+				return []
+
+			expanded = os.path.expanduser(text)
+			if expanded.endswith(os.sep) or Path(expanded).is_dir():
+				dirpath = Path(expanded)
+				prefix = ""
+			else:
+				p = Path(expanded)
+				dirpath = p.parent if str(p.parent) else Path(".")
+				prefix = p.name
+
+			try:
+				if not dirpath.exists() or not dirpath.is_dir():
+					return []
+
+				pref = prefix.lower()
+				entries = []
+				for child in dirpath.iterdir():
+					name = child.name
+					if prefix and not name.lower().startswith(pref):
+						continue
+
+					label = name + ("/" if child.is_dir() else "")
+					value = str(child) + ("/" if child.is_dir() else "")
+					entries.append({"label": label, "value": value})
+
+				entries.sort(key = lambda d: (not d["label"].endswith("/"), d["label"].lower()))
+				return entries[:50]
+
+			except PermissionError:
+				return [{"label": "Permission denied", "value": ""}]
+
+		@self.app.callback(
+			Output("file-path", "value"),
+			Input("file-suggest", "value"),
+			prevent_initial_call = True,
+		)
+		def apply_suggestion(selected):
+			if not selected:
+				return no_update
+			return selected
+
+		@self.app.callback(
 			Output("file-controls", "style"),
 			Input("mode-switch", "value")
 		)
 		def toggle_file_controls(mode):
-			return {"display": "block"} if mode in ["file", "file_biomed"] else {"display": "none"}
-		
-		@self.app.callback(
-			Output("file-selector", "options"),
-			Input("mode-switch", "value")
-		)
-		def list_files(mode):
-			if mode not in ["file", "file_biomed"]:
-				return []
-			
-			if mode == 'file_biomed':
-				data_dir = Path("data_storage")
-
-				files = sorted(data_dir.glob("*.parquet"))
-				return [{"label": f.name, "value": str(f)} for f in files]
-
-			if mode == 'file':
-				data_dir = Path(".")
-
-				files = sorted(data_dir.glob("*.pkl"))
-				print(files)
-				return [{"label": f.name, "value": str(f)} for f in files]
+			return {"display": "block"} if mode in ["file"] else {"display": "none"}
 
 		@self.app.callback(
 			Output("cycle-selector", "options"),
 			Output("cycle-selector", "value"),
 			Output("load-status", "children"),
 			Input("load-file-btn", "n_clicks"),
-			State("file-selector", "value"),
+			State("file-path", "value"),
 			State("mode-switch", "value"),
 			prevent_initial_call = True
 		)
 		def load_file_and_populate_cycles(n_clicks, filepath, mode):
 			if not filepath or not Path(filepath).is_file():
 				return [], None, "No file selected or not found."
-			
-			if mode == 'file_biomed':
-				try:
-					self.read_from_file = pd.read_parquet(filepath)
-				except Exception as e:
-					return [], None, f"Read error: {e}"
-				
 
-				if "cycle_id" not in self.read_from_file.columns:
-					return [], None, "Missing cycle_id."
+			if mode == 'file':
+				self.data_from_file = self.profile.read_file(filepath)
 
-				print(self.read_from_file)
-				unique_cycles = sorted(self.read_from_file["cycle_id"].unique())
-				options = [{"label": str(c), "value": c} for c in unique_cycles]
-				default = unique_cycles[0] if unique_cycles else None
-				return options, default, f"Loaded {len(unique_cycles)} cycles."
-
-			elif mode == 'file':
-				try:
-					with open(filepath, 'rb') as fid:
-						self.read_from_file = xt.Particles.from_dict(pk.load(fid))
-				except Exception as e:
-					return [], None, f"Read error: {e}"
-				
-#				print(self.read_from_file)
-				return [0], 0, f"Loaded particles data."
-			
+				if isinstance(self.data_from_file, pd.DataFrame) and ("cycle_id" in self.data_from_file.columns): 
+					unique_cycles = sorted(getattr(self.data_from_file, 'cycle_id').unique())
+					options = [{"label": str(c), "value": c} for c in unique_cycles]
+					default = unique_cycles[0] if unique_cycles else None
+					return options, default, f"Loaded {len(unique_cycles)} cycles."
+				else:
+					return [0], 0, f"Loaded data."			
 			else:
 				return [], None, "Unknown error"
 
@@ -573,7 +574,7 @@ class ExtractionDashboard:
 			Output("cycle-load-trigger", "children"),
 			Input("mode-switch", "value"),
 			Input("cycle-selector", "value"),
-			State("file-selector", "value"),
+			State("file-path", "value"),
 			prevent_initial_call = True
 		)
 		def on_cycle_selected(mode, cycle_id, filepath):
@@ -585,13 +586,9 @@ class ExtractionDashboard:
 					return no_update
 
 				elif mode == "file":
-					with open(filepath, 'rb') as fid:
-						read_from_file = xt.Particles.from_dict(pk.load(fid))
-					read_from_file.sort(by = 'at_turn', interleave_lost_particles = True)
+					self._clear_buffer()
 
-					self._clear_buffer()		
-
-					data_mapping = self.profile.process_particles_file(self, read_from_file)
+					data_mapping = self.profile.process_file(self, self.data_from_file, cycle_id = cycle_id)
 
 					with self._buflock:
 						self.current_batch_id = 0
@@ -599,21 +596,6 @@ class ExtractionDashboard:
 							self.data_buffer[key].extend(data_mapping[key], batch_id = self.current_batch_id)
 						
 						self.run_callbacks()
-
-				elif mode == "file_biomed":
-					single_cycle = self.read_from_file[self.read_from_file['cycle_id'] == cycle_id]
-					print(single_cycle)
-
-					self._clear_buffer()
-
-					with self._buflock:
-						
-						self.data_buffer['IC1'].extend(list(single_cycle['Y[0]'].values))
-						self.data_buffer['IC2'].extend(list(single_cycle['Y[1]'].values))
-						self.data_buffer['IC3'].extend(list(single_cycle['Y[2]'].values))
-
-						self.data_buffer['time'].extend(list(single_cycle.index.to_pydatetime()))
-
 
 				print(f"[INFO] Loaded cycle #{cycle_id}")
 
