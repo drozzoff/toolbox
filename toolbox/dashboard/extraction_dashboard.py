@@ -542,7 +542,7 @@ class ExtractionDashboard:
 			Input("mode-switch", "value")
 		)
 		def toggle_file_controls(mode):
-			return {"display": "block"} if mode in ["file", "file_biomed"] else {"display": "none"}
+			return {"display": "block"} if mode in ["file"] else {"display": "none"}
 
 		@self.app.callback(
 			Output("cycle-selector", "options"),
