@@ -11,6 +11,7 @@ import pickle as pk
 import xobjects as xo
 import xtrack as xt
 import time
+import os
 
 
 def split_indices(n_elements: int, n_chuncks: int):
@@ -68,7 +69,7 @@ def worker(
 	log_worker(t0, device, f"Finished tracking | Track time = {line_to_track.time_last_track}", verbose = verbose)
 
 	with open(f"{folder_to_save_particles}/beam_chunk_{device}.pkl", 'wb') as fid:
-		pk.dump(p.to_dict(), fid)
+		pk.dump(beam_chunk.to_dict(), fid)
 	
 	log_worker(t0, device, "Saved the chunk of the beam", verbose = verbose)
 
@@ -85,7 +86,8 @@ def track_multigpu(
 	line_constructor: callable, 
 	num_turns: int, 
 	num_gpus: int,
-	verbose: int = 1
+	verbose: int = 1,
+	**kwargs
 	):
 	"""
 	Runs tracking on GSI HPC with multiple GPUs.
@@ -130,27 +132,38 @@ def track_multigpu(
 
 	devices = devices[:num_gpus]
 	verbose_worker = verbose > 1
+	
+	tmp_folder = tempfile.TemporaryDirectory()
+	temp_folder = tmp_folder.name
 
 	log_main(t0, "Start up", verbose = verbose)
+
 	if isinstance(particles, xt.Particles):
-		temp_folder = tempfile.TemporaryDirectory()
-		folder_to_save_particles = temp_folder.name
-		main_beam_loc = f"{folder_to_save_particles}/main_beam.pkl"
+		main_beam_loc = os.path.join(temp_folder, "main_beam.pkl")
 		with open(main_beam_loc, 'wb') as fid:
 			pk.dump(particles.to_dict(), fid)
+			
+		n_particles = particles._capacity
 	
 	if isinstance(particles, str):
 		main_beam_loc = particles
+		n_particles = kwargs.get('n_particles', None)
+		
+		if n_particles is None:
+			with open(particles, 'rb') as fid:
+				tmp = xt.Particles.from_dict(pk.load(fid))
+
+			n_particles = tmp._capacity
 
 	log_main(t0, "Saved the beam in the memory", verbose = verbose)
 
-	ranges = split_indices(particles._capacity, num_gpus)
+	ranges = split_indices(n_particles, num_gpus)
 	procs = []
 	
 	for device, (i0, i1) in zip(devices, ranges):
 		p = mp.Process(
 			target = worker,
-			args = (line_constructor, main_beam_loc, device, num_turns, i0, i1, folder_to_save_particles, verbose_worker),
+			args = (line_constructor, main_beam_loc, device, num_turns, i0, i1, temp_folder, verbose_worker),
 		)
 		procs.append(p)
 
@@ -168,7 +181,7 @@ def track_multigpu(
 
 	tracked_beam = None
 	for device in devices:
-		with open(f"{folder_to_save_particles}/beam_chunk_{device}.pkl", 'rb') as fid:
+		with open(os.path.join(temp_folder, f"beam_chunk_{device}.pkl"), 'rb') as fid:
 			beam_chunk = xt.Particles.from_dict(pk.load(fid))
 
 		if tracked_beam:
