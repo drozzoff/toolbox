@@ -14,9 +14,7 @@ from functools import wraps
 from pathlib import Path
 import traceback
 import pandas as pd
-import pickle as pk
 import datetime
-import xtrack as xt
 
 
 def flatten_input(method):
@@ -612,17 +610,11 @@ class ExtractionDashboard:
 			sys.exit(0)
 
 if __name__ == "__main__":
-	test = ExtractionDashboard(
-		port = 35235, 
-		data_to_monitor = [
-			"intensity", 
-			"ES_septum_anode_losses",
-#			"spill",
-			"spill_mixed",
-			"ES_entrance_phase_space",
-#			"MS_entrance_phase_space",
-			"separatrix"
-		]
-	)
+	from toolbox.dashboard.profiles import SIS18Profile
 
+	test = ExtractionDashboard(
+		profile = SIS18Profile(),
+		port = 35235, 
+		data_to_monitor = ["intensity"]
+	)
 	test.run_dash_server()
