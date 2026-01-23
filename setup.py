@@ -23,6 +23,9 @@ setup(
 	license = "MIT",
 	
 	packages = find_packages(include = ["toolbox", "toolbox.*"]),
+	package_data = {
+		'toolbox.dashboard': ["assets/*.css"]
+	},
 	install_requires = DEPENDENCIES,
 	classifiers = [
 		"Intended Audience :: Science/Research",

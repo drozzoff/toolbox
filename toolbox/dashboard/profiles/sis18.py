@@ -132,7 +132,7 @@ class SIS18Profile:
 			'spill': DataField(
 				buffer_dependance = ['turn', 'extracted_at_ES:x', 'extracted_at_ES:px', 'extracted_at_ES:at_turn'], 
 				output_buffers = ['spill'],
-				callback = partial(spill_callback, dashboard),
+				callback = partial(spill_callback, dashboard, start_count_at_turn = 500),
 				callback_level = 0,
 				plot_from = ['turn', 'spill'],
 				plot_order = [
@@ -397,7 +397,7 @@ def ES_losses_callback(dashboard: ExtractionDashboard):
 
 	dashboard.data_buffer['ES_septum_losses'].extend(lost_inside + lost_outside, batch_id = dashboard.current_batch_id)
 
-def spill_callback(dashboard: ExtractionDashboard):
+def spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
 	x = np.array(dashboard.data_buffer['extracted_at_ES:x'].recent_data)
 	px = np.array(dashboard.data_buffer['extracted_at_ES:px'].recent_data)
 
@@ -408,7 +408,9 @@ def spill_callback(dashboard: ExtractionDashboard):
 
 	threshold = -0.055 - (px + 7.4e-3)**2  / (2 * 1.7857e-3)
 	lost_inside_septum = x > threshold
-	survived_inside_septum_at_turn = at_turn[~lost_inside_septum]
+	good_turns = at_turn > start_count_at_turn
+	good_particles = ~lost_inside_septum & good_turns
+	survived_inside_septum_at_turn = at_turn[good_particles]
 
 	losses_at_turn = np.bincount(
 		survived_inside_septum_at_turn,
@@ -462,7 +464,6 @@ def intensity_layout(fig: go.Figure):
 		title = 'Intensity',
 		xaxis_title = 'turn',
 		yaxis_title = 'Intensity [a.u.]',
-		width = 1800,
 		height = 400,
 	)
 
@@ -471,7 +472,6 @@ def ES_outside_losses_layout(fig: go.Figure):
 		title = 'Es losses on the outside of anode',
 		xaxis_title = 'turn',
 		yaxis_title = 'Lost particles [a.u.]',
-		width = 1800,
 		height = 400,
 	)
 
@@ -480,7 +480,6 @@ def ES_inside_losses_layout(fig: go.Figure):
 		title = 'Es losses on the inside of anode',
 		xaxis_title = 'turn',
 		yaxis_title = 'Lost particles [a.u.]',
-		width = 1800,
 		height = 400,
 	)
 
@@ -489,7 +488,6 @@ def ES_losses_layout(fig: go.Figure):
 		title = 'Es losses on the anode',
 		xaxis_title = 'turn',
 		yaxis_title = 'Lost [a.u.]',
-		width = 1800,
 		height = 400,
 	)
 
@@ -506,7 +504,6 @@ def spill_layout(fig: go.Figure):
 		title = 'Spill',
 		xaxis_title = 'turn',
 		yaxis_title = 'Spill [a.u.]',
-		width = 2250,
 		height = 400,
 		showlegend = False
 	)
@@ -524,7 +521,6 @@ def accumulated_spill_layout(fig: go.Figure):
 		title = 'Spill accumulated',
 		xaxis_title = 'turn',
 		yaxis_title = 'Spill [a.u.]',
-		width = 1200,
 		height = 700,
 		showlegend = False
 	)
@@ -534,7 +530,6 @@ def accumulated_ES_losses_layout(fig: go.Figure):
 		title = 'Accumulated losses on the anode',
 		xaxis_title = 'turn',
 		yaxis_title = 'Lost [a.u.]',
-		width = 1500,
 		height = 700,
 	)
 
