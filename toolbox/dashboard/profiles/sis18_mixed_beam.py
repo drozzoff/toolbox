@@ -24,7 +24,7 @@ class SIS18_mixed_beam_Profile:
 		res['spill:ion1'] =  DataField(
 			buffer_dependance = ['turn', 'extracted_at_ES:x', 'extracted_at_ES:px', 'extracted_at_ES:at_turn', 'extracted_at_ES:ion'], 
 			output_buffers = ['spill:ion1'],
-			callback = partial(ion_spill_callback, dashboard, 1),
+			callback = partial(ion_spill_callback, dashboard, 1, start_count_at_turn = 500),
 			callback_level = 0,
 			plot_from = ['turn', 'spill:ion1'],
 			plot_order = [
@@ -47,7 +47,7 @@ class SIS18_mixed_beam_Profile:
 		res['spill:ion2'] =  DataField(
 			buffer_dependance = ['turn', 'extracted_at_ES:x', 'extracted_at_ES:px', 'extracted_at_ES:at_turn', 'extracted_at_ES:ion'], 
 			output_buffers = ['spill:ion2'],
-			callback = partial(ion_spill_callback, dashboard, 2),
+			callback = partial(ion_spill_callback, dashboard, 2, start_count_at_turn = 500),
 			callback_level = 0,
 			plot_from = ['turn', 'spill:ion2'],
 			plot_order = [
@@ -69,7 +69,7 @@ class SIS18_mixed_beam_Profile:
 		)
 		res['spill:mixed'] =  DataField(
 			buffer_dependance = ['turn', 'spill:ion1', 'spill:ion2'], 
-			callback = partial(mixed_spill_callback, dashboard),
+			callback = partial(mixed_spill_callback, dashboard, start_count_at_turn = 500),
 			callback_level = 1,
 			plot_from = ['turn', 'spill:ion1', 'spill:ion2'],
 			plot_order = [
@@ -219,7 +219,7 @@ class SIS18_mixed_beam_Profile:
 		return data_map
 	
 # callbacks
-def ion_spill_callback(dashboard: ExtractionDashboard, ion_key = 1):
+def ion_spill_callback(dashboard: ExtractionDashboard, ion_key = 1, start_count_at_turn: int = 0):
 	x = np.array(dashboard.data_buffer['extracted_at_ES:x'].recent_data)
 	px = np.array(dashboard.data_buffer['extracted_at_ES:px'].recent_data)
 	ion_id = np.array(dashboard.data_buffer['extracted_at_ES:ion'].recent_data)
@@ -228,20 +228,12 @@ def ion_spill_callback(dashboard: ExtractionDashboard, ion_key = 1):
 	end_turn = dashboard.data_buffer['turn'].recent_data[-1]
 	at_turn = np.array(dashboard.data_buffer['extracted_at_ES:at_turn'].recent_data) - start_turn
 
-	print(f"x = {x}, shape = {x.shape}")
-	print(f"px = {x}, shape = {px.shape}")
-	print(f"ion_id = {ion_id}, shape = {ion_id.shape}")
-	print(f"at_turn = {at_turn}, shape = {at_turn.shape}")
-
 	threshold = -0.055 - (px + 7.4e-3)**2  / (2 * 1.7857e-3)
 	lost_inside_septum = x > threshold
+	good_turns = at_turn > start_count_at_turn
+	good_particles = ~lost_inside_septum & good_turns
+	ion_survived_inside_septum = (good_particles) & (ion_id == ion_key)
 
-
-	print(f"Survived in a septum = {np.sum(~lost_inside_septum)}")
-	print(f"Is current ion = {np.sum(ion_id == ion_key)}")
-	ion_survived_inside_septum = (~lost_inside_septum) & (ion_id == ion_key)
-
-	print(f"Extracted particles of Ion {ion_key} = {np.sum(ion_survived_inside_septum)}")
 	ion_survived_inside_septum_at_turn = at_turn[ion_survived_inside_septum]
 
 	ion_losses_at_turn = np.bincount(
@@ -251,12 +243,12 @@ def ion_spill_callback(dashboard: ExtractionDashboard, ion_key = 1):
 
 	dashboard.data_buffer[f'spill:ion{ion_key}'].extend(ion_losses_at_turn, batch_id = dashboard.current_batch_id)
 
-def mixed_spill_callback(dashboard: ExtractionDashboard):
+def mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
 	if dashboard.data_buffer['spill:ion1'].last_batch_id != dashboard.current_batch_id:
-		ion_spill_callback(dashboard, 1)
+		ion_spill_callback(dashboard, 1, start_count_at_turn)
 	
 	if dashboard.data_buffer['spill:ion2'].last_batch_id != dashboard.current_batch_id:
-		ion_spill_callback(dashboard, 2)
+		ion_spill_callback(dashboard, 2, start_count_at_turn)
 
 def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwargs):
 	"""
@@ -271,18 +263,18 @@ def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwa
 
 	dashboard.data_buffer[acc_buffer_key].extend(extension, batch_id = dashboard.current_batch_id)
 
-def ion_accumulated_spill_callback(dashboard: ExtractionDashboard, ion_key = 1):
+def ion_accumulated_spill_callback(dashboard: ExtractionDashboard, ion_key = 1, start_count_at_turn: int = 0):
 	if dashboard.data_buffer[f'spill:ion{ion_key}'].last_batch_id != dashboard.current_batch_id:
-		ion_spill_callback(dashboard, 1)
+		ion_spill_callback(dashboard, 1, start_count_at_turn)
 	
 	_accumulated_quantity(dashboard, f"spill:ion{ion_key}")
 
-def mixed_accumulated_spill_callback(dashboard: ExtractionDashboard):
+def mixed_accumulated_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
 	if dashboard.data_buffer[f'spill:ion1:accumulated'].last_batch_id != dashboard.current_batch_id:
-		ion_accumulated_spill_callback(dashboard, 1)
+		ion_accumulated_spill_callback(dashboard, 1, start_count_at_turn)
 
 	if dashboard.data_buffer[f'spill:ion2:accumulated'].last_batch_id != dashboard.current_batch_id:
-		ion_accumulated_spill_callback(dashboard, 2)
+		ion_accumulated_spill_callback(dashboard, 2, start_count_at_turn)
 
 # plotting layouts
 def spill_layout(fig: go.Figure, *, title: str = "Spill"):
@@ -290,9 +282,8 @@ def spill_layout(fig: go.Figure, *, title: str = "Spill"):
 		title = title,
 		xaxis_title = 'turn',
 		yaxis_title = 'Spill [a.u.]',
-		width = 2250,
 		height = 400,
-		showlegend = False
+		showlegend = True
 	)
 
 def accumulated_spill_layout(fig: go.Figure, *, title: str = "Accumulated spill"):
@@ -300,8 +291,7 @@ def accumulated_spill_layout(fig: go.Figure, *, title: str = "Accumulated spill"
 		title = title,
 		xaxis_title = 'turn',
 		yaxis_title = 'Spill [a.u.]',
-		width = 1200,
 		height = 700,
-		showlegend = False
+		showlegend = True
 	)
 
