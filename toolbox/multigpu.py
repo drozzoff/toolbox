@@ -31,14 +31,25 @@ def log_worker(t0, device, msg, *, verbose = True):
 
 def worker(
 	build_line: callable,
-	particles_filename: str,
 	device: str,
 	num_turns: int,
-	i0: int, # including
-	i1: int, # excluding
-	folder_to_save_particles: str,
+	folder: str,
 	verbose: bool = False
 	):
+	"""
+	Parameters
+	----------
+	build_line
+		Function that expands the line
+	device
+		Name of the GPU device for the context
+	num_turns
+		Number of turns to track the particles for
+	folder
+		Name of the folder to read/write the particles' data
+	verbose
+		If `True` (dafault `False`) prints
+	"""
 	t0 = time.time()
 
 	current_context =  xo.ContextPyopencl(device)
@@ -52,23 +63,22 @@ def worker(
 
 	log_worker(t0, device, "Built tracker", verbose = verbose)
 
-	with open(particles_filename, 'rb') as fid:
-		main_beam = xt.Particles.from_dict(pk.load(fid), _context = current_context)
-	mask = (main_beam.particle_id >= i0) & (main_beam.particle_id < i1)
-	beam_chunk = main_beam.filter(mask)
+	with open(os.path.join(folder, f"in_beam_chunk_{device}.pkl"), 'rb') as fid:
+		beam_chunk = xt.Particles.from_dict(pk.load(fid), _context = current_context)
 
 	log_worker(t0, device, "Created particle beam", verbose = verbose)
 
 	line_to_track.track(
-		beam_chunk, 
+		particles = beam_chunk, 
 		num_turns = num_turns,
 		time = True,
+		turn_by_turn_monitor = False,
 		with_progress = verbose,
 	)
 
 	log_worker(t0, device, f"Finished tracking | Track time = {line_to_track.time_last_track}", verbose = verbose)
 
-	with open(f"{folder_to_save_particles}/beam_chunk_{device}.pkl", 'wb') as fid:
+	with open(os.path.join(folder, f"out_beam_chunk_{device}.pkl"), 'wb') as fid:
 		pk.dump(beam_chunk.to_dict(), fid)
 	
 	log_worker(t0, device, "Saved the chunk of the beam", verbose = verbose)
@@ -138,32 +148,27 @@ def track_multigpu(
 
 	log_main(t0, "Start up", verbose = verbose)
 
-	if isinstance(particles, xt.Particles):
-		main_beam_loc = os.path.join(temp_folder, "main_beam.pkl")
-		with open(main_beam_loc, 'wb') as fid:
-			pk.dump(particles.to_dict(), fid)
-			
-		n_particles = particles._capacity
-	
 	if isinstance(particles, str):
-		main_beam_loc = particles
-		n_particles = kwargs.get('n_particles', None)
-		
-		if n_particles is None:
-			with open(particles, 'rb') as fid:
-				tmp = xt.Particles.from_dict(pk.load(fid))
+		with open(particles, 'rb') as fid:
+			particles = xt.Particles.from_dict(pk.load(fid))
+	
+	# splitting and saving the beam into chunks
+	ranges = split_indices(particles._capacity, num_gpus)
+	procs = []
 
-			n_particles = tmp._capacity
+	for device, (i0, i1) in zip(devices, ranges):
+		mask = (particles.particle_id >= i0) & (particles.particle_id < i1)
+		beam_chunk = particles.filter(mask)
+
+		with open(os.path.join(temp_folder, f"in_beam_chunk_{device}.pkl") , 'wb') as fid:
+			pk.dump(beam_chunk.to_dict(), fid)
 
 	log_main(t0, "Saved the beam in the memory", verbose = verbose)
 
-	ranges = split_indices(n_particles, num_gpus)
-	procs = []
-	
 	for device, (i0, i1) in zip(devices, ranges):
 		p = mp.Process(
 			target = worker,
-			args = (line_constructor, main_beam_loc, device, num_turns, i0, i1, temp_folder, verbose_worker),
+			args = (line_constructor, device, num_turns, temp_folder, verbose_worker),
 		)
 		procs.append(p)
 
@@ -181,7 +186,7 @@ def track_multigpu(
 
 	tracked_beam = None
 	for device in devices:
-		with open(os.path.join(temp_folder, f"beam_chunk_{device}.pkl"), 'rb') as fid:
+		with open(os.path.join(temp_folder, f"out_beam_chunk_{device}.pkl"), 'rb') as fid:
 			beam_chunk = xt.Particles.from_dict(pk.load(fid))
 
 		if tracked_beam:
