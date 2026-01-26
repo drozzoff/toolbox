@@ -547,8 +547,6 @@ class ExtractionDashboard:
 				),
 			],
 		)
-
-
 		@self.app.callback(
 			Output({"type": "stream-graph", "key": MATCH}, "extendData"),
 			Input("refresh", "n_intervals"),

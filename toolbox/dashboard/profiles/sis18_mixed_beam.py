@@ -102,6 +102,30 @@ class SIS18_mixed_beam_Profile:
 			plot_layout = partial(spill_layout, title = "Spill, mixed"),
 			category = "Turn By Turn"
 		)
+		res['spill:mixed:relation'] =  DataField(
+			buffer_dependance = ['turn', 'spill:ion1', 'spill:ion2'],
+			output_buffers = ['spill:mixed:relation'],
+			callback = partial(relation_mixed_spill_callback, dashboard, start_count_at_turn = 500),
+			callback_level = 1,
+			plot_from = ['turn', 'spill:mixed:relation'],
+			plot_order = [
+				{
+					"x": 'turn',
+					"y": 'spill:mixed:relation',
+					"settings": dict(
+						mode = "lines",
+						line = dict(
+							color = "blue"
+						),
+						name = "Ion 1/Ion 2",
+						showlegend = True
+					)
+				},
+			],
+			bin = dict(enabled = True, x = "middle", y = "sum"),
+			plot_layout = partial(spill_layout, title = "Spill, mixed; Ion 1 / Ion 2"),
+			category = "Turn By Turn"
+		)
 		res['spill:ion1:accumulated'] =  DataField(
 			buffer_dependance = ['turn', 'spill:ion1'], 
 			output_buffers = ['spill:ion1:accumulated'],
@@ -249,6 +273,25 @@ def mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: in
 	
 	if dashboard.data_buffer['spill:ion2'].last_batch_id != dashboard.current_batch_id:
 		ion_spill_callback(dashboard, 2, start_count_at_turn)
+
+def relation_mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+	if dashboard.data_buffer['spill:ion1'].last_batch_id != dashboard.current_batch_id:
+		ion_spill_callback(dashboard, 1, start_count_at_turn)
+	
+	if dashboard.data_buffer['spill:ion2'].last_batch_id != dashboard.current_batch_id:
+		ion_spill_callback(dashboard, 2, start_count_at_turn)
+
+	ion1_spill = np.array(dashboard.data_buffer['spill:ion1'].recent_data)
+	ion2_spill = np.array(dashboard.data_buffer['spill:ion2'].recent_data)
+
+	relation = np.divide(
+		ion1_spill, 
+		ion2_spill,
+		out = np.zeros_like(ion1_spill, dtype = float),
+    	where = ion2_spill != 0
+		)
+
+	dashboard.data_buffer['spill:mixed:relation'].extend(relation, batch_id = dashboard.current_batch_id)
 
 def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwargs):
 	"""
