@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html, no_update, MATCH
+from dash import dcc, html, no_update, MATCH, clientside_callback
 from dash.dependencies import Output, Input, State
 from flask_compress import Compress
 import plotly.graph_objs as go
@@ -104,7 +104,6 @@ def _bin_array(arr, bin_length: int, how: str) -> list:
 		
 		raise ValueError(how)
 	elif isinstance(arr[0], Ratio):
-		print("THe data is Ratio")
 		out = []
 		for i in range(0, bins_length, bin_length):
 			chunk = arr[i: i + bin_length]
@@ -368,8 +367,12 @@ class ExtractionDashboard:
 							figure = self.plot_figure(key, init_run = True),
 							style = {"width": "100%"},
 							config = {"responsive": True}
+						),
+						html.Pre(
+							id = {"type": "client-debug", "key": key},
+							style = {"whiteSpace": "pre-wrap", "fontSize": "10px"}
 						)
-					], style = {'display': 'flex', 'gap': '10px'})
+					], style = {'display': 'flex', "flexDirection":"column", 'gap': '10px'})
 				)
 			
 			# Tab 2 - Phase space
@@ -482,6 +485,7 @@ class ExtractionDashboard:
 										),
 									],
 								),
+								html.Pre(id = "client-debug", style = {"whiteSpace": "pre-wrap"}),
 								html.Div(
 									id = "file-controls",
 									className = "card",
@@ -546,8 +550,6 @@ class ExtractionDashboard:
 						),
 					],
 				),
-
-				# Hidden infrastructure
 				html.Div(
 					id = "xaxis-trigger",
 					style = {"display": "none"},
@@ -564,6 +566,55 @@ class ExtractionDashboard:
 				),
 			],
 		)
+
+		@self.app.callback(
+			Output("refresh", "disabled"),
+			Input("mode-switch", "value"),
+		)
+		def toggle_interval(mode):
+			return (mode == "file")
+
+		@self.app.callback(
+			Output({"type":"stream-graph", "key": MATCH}, "figure"),
+			Input("mode-switch", "value"),
+			Input("bin-length", "value"),
+			Input("cycle-selector", "value"),
+			Input("cycle-load-trigger", "children"),
+			State({"type":"stream-graph", "key": MATCH}, "id"),
+			prevent_initial_call = True,
+		)
+		def render_full_figure(mode, bin_length, cycle_value, _loaded_trigger, graph_id):
+			if mode != "file":
+				return no_update
+			
+			data_key = graph_id["key"]
+			df = self.data_fields[data_key]
+			bin_info = df.bin
+
+			buff = {}
+			with self._buflock:
+				tmp = df.plot_order[0]
+				raw_x = self.data_buffer[tmp["x"]].data
+				raw_y = self.data_buffer[tmp["y"]].data
+
+				do_bin = bin_info and bin_info.get("enabled") and (bin_length and bin_length > 1)
+				if do_bin:
+					x = _bin_array(raw_x, bin_length, bin_info["x"])
+					y = _bin_array(raw_y, bin_length, bin_info["y"])
+				else:
+					x = raw_x
+					try:
+						y = [float(v) for v in raw_y]
+					except TypeError:
+						y = [v.value() for v in raw_y]
+
+				if tmp['x'] not in buff:
+					buff[tmp['x']] = x
+				if tmp['y'] not in buff:
+					buff[tmp['y']] = y
+			
+			return self.plot_figure(data_key, **buff)
+
 		@self.app.callback(
 			Output({"type": "stream-graph", "key": MATCH}, "extendData"),
 			Input("refresh", "n_intervals"),
@@ -572,6 +623,9 @@ class ExtractionDashboard:
 			State("bin-length", "value"),
 		)
 		def stream_data(n_intervals, mode, graph_id, bin_length):
+			if mode == "file":
+				return no_update
+
 			data_key = graph_id["key"]
 
 			df = self.data_fields[data_key]
@@ -612,10 +666,6 @@ class ExtractionDashboard:
 
 					df.buffer_pointer = end
 
-					print(f"Streaming for {graph_id}")
-					print(f"\tTraces to stream: {trace_bufs}")
-					print(f"\tStreamed {df.buffer_pointer} / {total}")
-
 					return dict(x = xs, y = ys), trace_indices, total
 
 				# binned streaming
@@ -625,6 +675,12 @@ class ExtractionDashboard:
 
 					if ptr >= total:
 						return no_update
+					
+					print("KEY", data_key,
+						"bin", bin_length,
+						"ptr_bin", ptr,
+						"raw_total", len(self.data_buffer[trace_bufs[0]].data),
+						"total_binned", total)
 					
 					end = min(ptr + self.CHUNK_SIZE, total)
 
@@ -650,12 +706,8 @@ class ExtractionDashboard:
 						trace_indices.append(i)
 
 					df.buffer_pointer_bin = end
-					print(f"Streaming for {graph_id}")
-					print(f"\tTraces to stream: {trace_bufs}")
-					print(f"\tStreamed {df.buffer_pointer_bin} / {total}")
 
 					return dict(x = xs, y = ys), trace_indices, total
-
 
 		@self.app.callback(
 			Output("listener-trigger", "children"),
