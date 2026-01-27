@@ -15,6 +15,8 @@ from pathlib import Path
 import traceback
 import pandas as pd
 import datetime
+import numbers
+from toolbox.dashboard.profiles.datafield import Ratio
 
 
 def flatten_input(method):
@@ -87,30 +89,45 @@ def _bin_array(arr, bin_length: int, how: str) -> list:
 	if how == "middle":
 		return arr[bin_length // 2:bins_length:bin_length]
 	
-	a = np.asarray(arr[:bins_length])
+	if isinstance(arr[0], numbers.Real):
+		a = np.asarray(arr[:bins_length])
+		a_bined = a.astype(float, copy = False).reshape(-1, bin_length)
+		
+		if how == "sum":
+			return a_bined.sum(axis = 1).tolist()
+		if how == "mean":
+			return a_bined.mean(axis = 1).tolist()	
+		if how == "max":
+			return a_bined.max(axis = 1).tolist()
+		if how == "min":
+			return a_bined.min(axis = 1).tolist()
+		
+		raise ValueError(how)
+	elif isinstance(arr[0], Ratio):
+		print("THe data is Ratio")
+		out = []
+		for i in range(0, bins_length, bin_length):
+			chunk = arr[i: i + bin_length]
 
-	if not np.issubdtype(a.dtype, np.number):
-		raise TypeError(f"Numerical data expected, got {a.dtype}")
-
-	a_bined = a.astype(float, copy = False).reshape(-1, bin_length)
-	
-	if how == "sum":
-		return a_bined.sum(axis = 1).tolist()
-	if how == "mean":
-		return a_bined.mean(axis = 1).tolist()	
-	if how == "max":
-		return a_bined.max(axis = 1).tolist()
-	if how == "min":
-		return a_bined.min(axis = 1).tolist()
-	
-	raise ValueError(how)
+			if how in {"sum", "mean"}:
+				res = sum(chunk, Ratio(0, 0))
+				out.append(res.value())
+			elif how == "max":
+				out.append(max(x.value() for x in chunk))
+			elif how == "min":
+				out.append(min(x.value() for x in chunk))
+			else:
+				raise ValueError(how)
+		return out
+	else:
+		raise TypeError(f"Unsupported data type: {type(arr[0])}")
 
 class ExtractionDashboard:
 	"""
 	Class to manage the tracking dashboard.
 	"""
 
-	CHUNK_SIZE = 5000 # max number points to send
+	CHUNK_SIZE = 1000 # max number points to send
 	MAX_CALLBACK_LEVEL = 3
 	
 	def __init__(
@@ -547,8 +564,6 @@ class ExtractionDashboard:
 				),
 			],
 		)
-
-
 		@self.app.callback(
 			Output({"type": "stream-graph", "key": MATCH}, "extendData"),
 			Input("refresh", "n_intervals"),
@@ -585,7 +600,10 @@ class ExtractionDashboard:
 						else:
 							x_vals = raw_x
 
-						y_vals = [float(y) for y in self.data_buffer[tmp['y']].data[ptr:end]] 
+						try:
+							y_vals = [float(y) for y in self.data_buffer[tmp['y']].data[ptr:end]] 
+						except TypeError:
+							y_vals = [y.value() for y in self.data_buffer[tmp['y']].data[ptr:end]] 
 						
 						xs.append(x_vals)
 						ys.append(y_vals)
@@ -593,6 +611,10 @@ class ExtractionDashboard:
 						trace_indices.append(i)
 
 					df.buffer_pointer = end
+
+					print(f"Streaming for {graph_id}")
+					print(f"\tTraces to stream: {trace_bufs}")
+					print(f"\tStreamed {df.buffer_pointer} / {total}")
 
 					return dict(x = xs, y = ys), trace_indices, total
 
@@ -628,6 +650,10 @@ class ExtractionDashboard:
 						trace_indices.append(i)
 
 					df.buffer_pointer_bin = end
+					print(f"Streaming for {graph_id}")
+					print(f"\tTraces to stream: {trace_bufs}")
+					print(f"\tStreamed {df.buffer_pointer_bin} / {total}")
+
 					return dict(x = xs, y = ys), trace_indices, total
 
 

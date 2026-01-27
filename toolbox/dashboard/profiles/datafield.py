@@ -18,4 +18,17 @@ class DataField:
 	plot_order: list[dict] | None = None # Description of the order traces are added to the plot
 
 	category: str | None = None
+
+@dataclass
+class Ratio:
+	num: int
+	den: int
+
+	def __add__(self, other: "Ratio") -> "Ratio":
+		return Ratio(self.num + other.num, self.den + other.den)
 	
+	def value(self) -> float:
+		return float(self.num) / float(self.den) if self.den != 0 else 0.0
+	
+	def __str__(self):
+		return f"{self.num}/{self.den}"
