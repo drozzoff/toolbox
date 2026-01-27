@@ -593,25 +593,25 @@ class ExtractionDashboard:
 
 			buff = {}
 			with self._buflock:
-				tmp = df.plot_order[0]
-				raw_x = self.data_buffer[tmp["x"]].data
-				raw_y = self.data_buffer[tmp["y"]].data
+				for i, tmp in enumerate(df.plot_order):
+					raw_x = self.data_buffer[tmp["x"]].data
+					raw_y = self.data_buffer[tmp["y"]].data
 
-				do_bin = bin_info and bin_info.get("enabled") and (bin_length and bin_length > 1)
-				if do_bin:
-					x = _bin_array(raw_x, bin_length, bin_info["x"])
-					y = _bin_array(raw_y, bin_length, bin_info["y"])
-				else:
-					x = raw_x
-					try:
-						y = [float(v) for v in raw_y]
-					except TypeError:
-						y = [v.value() for v in raw_y]
+					do_bin = bin_info and bin_info.get("enabled") and (bin_length and bin_length > 1)
+					if do_bin:
+						x = _bin_array(raw_x, bin_length, bin_info["x"])
+						y = _bin_array(raw_y, bin_length, bin_info["y"])
+					else:
+						x = raw_x
+						try:
+							y = [float(v) for v in raw_y]
+						except TypeError:
+							y = [v.value() for v in raw_y]
 
-				if tmp['x'] not in buff:
-					buff[tmp['x']] = x
-				if tmp['y'] not in buff:
-					buff[tmp['y']] = y
+					if tmp['x'] not in buff:
+						buff[tmp['x']] = x
+					if tmp['y'] not in buff:
+						buff[tmp['y']] = y
 			
 			return self.plot_figure(data_key, **buff)
 

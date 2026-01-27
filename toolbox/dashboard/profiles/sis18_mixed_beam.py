@@ -287,9 +287,7 @@ def ratio_mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_tu
 	ion2_spill = dashboard.data_buffer['spill:ion2'].recent_data
 
 	ratios = [Ratio(a, b) for a, b in zip(ion1_spill, ion2_spill)]
-
-	i = 14000
-	print(ion1_spill[i], ion2_spill[i], ratios[i])
+	
 	dashboard.data_buffer['spill:mixed:ratio'].extend(ratios, batch_id = dashboard.current_batch_id)
 
 def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwargs):
