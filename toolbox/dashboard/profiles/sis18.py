@@ -7,8 +7,8 @@ from toolbox.dashboard.profiles.datafield import DataField
 
 
 class SIS18Profile:
-	def __init__(self):
-		pass
+	def __init__(self, start_count_at_turn: int = 0):
+		self.start_count_at_turn = start_count_at_turn
 
 	name = "SIS18 KO"
 	def make_datafields(self, dashboard: ExtractionDashboard):
@@ -55,7 +55,7 @@ class SIS18Profile:
 			'ES_septum_losses:inside': DataField(
 				buffer_dependance = ['turn', 'extracted_at_ES:x', 'extracted_at_ES:px', 'extracted_at_ES:at_turn'],
 				output_buffers = ['ES_septum_losses:inside'],
-				callback = partial(ES_inside_losses_callback, dashboard),
+				callback = partial(ES_inside_losses_callback, dashboard, start_count_at_turn = self.start_count_at_turn),
 				callback_level = 0,
 				plot_from = ['turn', 'ES_septum_losses:inside'],
 				plot_order = [
@@ -80,7 +80,7 @@ class SIS18Profile:
 			'ES_septum_losses': DataField(
 				buffer_dependance = ['turn', 'ES_septum_losses:inside', 'lost_on_septum_wires'],
 				output_buffers = ['ES_septum_losses'],
-				callback = partial(ES_losses_callback, dashboard),
+				callback = partial(ES_losses_callback, dashboard, start_count_at_turn = self.start_count_at_turn),
 				callback_level = 0,
 				plot_from = ['turn', 'ES_septum_losses:inside', 'lost_on_septum_wires', 'ES_septum_losses'],
 				plot_order = [
@@ -132,7 +132,7 @@ class SIS18Profile:
 			'spill': DataField(
 				buffer_dependance = ['turn', 'extracted_at_ES:x', 'extracted_at_ES:px', 'extracted_at_ES:at_turn'], 
 				output_buffers = ['spill'],
-				callback = partial(spill_callback, dashboard, start_count_at_turn = 500),
+				callback = partial(spill_callback, dashboard, start_count_at_turn = self.start_count_at_turn),
 				callback_level = 0,
 				plot_from = ['turn', 'spill'],
 				plot_order = [
@@ -306,10 +306,19 @@ class SIS18Profile:
 
 		return particles
 
-	def process_file(self, dashboard: ExtractionDashboard, particles: xt.Particles | str, **kwargs) -> dict:
+	def process_file(
+			self, 
+			dashboard: ExtractionDashboard, 
+			particles: xt.Particles | str, 
+			start_count_at_turn: None | int = None,
+			**kwargs
+		)-> dict:
 		"""
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
+		if start_count_at_turn is None:
+			start_count_at_turn = self.start_count_at_turn
+
 		if isinstance(particles, str):
 			particles = self.read_file(particles)
 
@@ -353,10 +362,13 @@ class SIS18Profile:
 
 			if key == 'lost_on_septum_wires':
 				at_septum_end = particles.s == 1.5
+				good_turn = particles.at_turn > start_count_at_turn
 				lost_at_septum_end = lost_mask & at_septum_end
-
-				if np.sum(lost_at_septum_end) > 0:
-					lost_particles_at_septum_end = particles.filter(lost_at_septum_end)						
+				lost_at_septum_end_good_turn = lost_at_septum_end & good_turn
+				
+				if np.sum(lost_at_septum_end_good_turn) > 0:
+					
+					lost_particles_at_septum_end = particles.filter(lost_at_septum_end_good_turn)						
 
 					number_lost_particles_at_septum_end = np.bincount(
 						lost_particles_at_septum_end.at_turn,
@@ -369,7 +381,7 @@ class SIS18Profile:
 		return data_mapping
 
 # callbacks
-def ES_inside_losses_callback(dashboard: ExtractionDashboard):
+def ES_inside_losses_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
 
 	x = np.array(dashboard.data_buffer['extracted_at_ES:x'].recent_data)
 	px = np.array(dashboard.data_buffer['extracted_at_ES:px'].recent_data)
@@ -380,17 +392,19 @@ def ES_inside_losses_callback(dashboard: ExtractionDashboard):
 	at_turn = np.array(dashboard.data_buffer['extracted_at_ES:at_turn'].recent_data) - start_turn
 
 	threshold = -0.055 - (px + 7.4e-3)**2  / (2 * 1.7857e-3)
-	lost_inside_septum_at_turn = at_turn[x > threshold]
+	good_turns = at_turn > start_count_at_turn
 
+	lost_inside_septum_at_turn = at_turn[(x > threshold) & good_turns]
+	
 	losses_at_turn = np.bincount(
 		lost_inside_septum_at_turn,
 		minlength = end_turn - start_turn
 	)
 	dashboard.data_buffer['ES_septum_losses:inside'].extend(losses_at_turn, batch_id = dashboard.current_batch_id)
 
-def ES_losses_callback(dashboard: ExtractionDashboard):
+def ES_losses_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
 	if dashboard.data_buffer['ES_septum_losses:inside'].last_batch_id != dashboard.current_batch_id:
-		ES_inside_losses_callback(dashboard)
+		ES_inside_losses_callback(dashboard, start_count_at_turn)
 
 	lost_inside = np.array(dashboard.data_buffer['ES_septum_losses:inside'].recent_data)
 	lost_outside = np.array(dashboard.data_buffer['lost_on_septum_wires'].recent_data)

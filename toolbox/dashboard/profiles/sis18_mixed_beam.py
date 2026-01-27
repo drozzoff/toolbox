@@ -3,14 +3,16 @@ import numpy as np
 from functools import partial
 import xtrack as xt
 import pickle as pk
-from toolbox.dashboard.profiles.datafield import DataField
+from toolbox.dashboard.profiles.datafield import DataField, Ratio
 from toolbox.dashboard.profiles.sis18 import SIS18Profile
 
 
 class SIS18_mixed_beam_Profile:
-	def __init__(self, *, ion1_chi: float, ion2_chi: float):
+	def __init__(self, *, ion1_chi: float, ion2_chi: float, start_count_at_turn: int):
 		self.ion1_chi = ion1_chi
 		self.ion2_chi = ion2_chi
+		
+		self.start_count_at_turn = start_count_at_turn
 
 		self.base_profile = SIS18Profile()
 
@@ -24,7 +26,7 @@ class SIS18_mixed_beam_Profile:
 		res['spill:ion1'] =  DataField(
 			buffer_dependance = ['turn', 'extracted_at_ES:x', 'extracted_at_ES:px', 'extracted_at_ES:at_turn', 'extracted_at_ES:ion'], 
 			output_buffers = ['spill:ion1'],
-			callback = partial(ion_spill_callback, dashboard, 1, start_count_at_turn = 500),
+			callback = partial(ion_spill_callback, dashboard, 1, start_count_at_turn = self.start_count_at_turn),
 			callback_level = 0,
 			plot_from = ['turn', 'spill:ion1'],
 			plot_order = [
@@ -47,7 +49,7 @@ class SIS18_mixed_beam_Profile:
 		res['spill:ion2'] =  DataField(
 			buffer_dependance = ['turn', 'extracted_at_ES:x', 'extracted_at_ES:px', 'extracted_at_ES:at_turn', 'extracted_at_ES:ion'], 
 			output_buffers = ['spill:ion2'],
-			callback = partial(ion_spill_callback, dashboard, 2, start_count_at_turn = 500),
+			callback = partial(ion_spill_callback, dashboard, 2, start_count_at_turn = self.start_count_at_turn),
 			callback_level = 0,
 			plot_from = ['turn', 'spill:ion2'],
 			plot_order = [
@@ -69,7 +71,7 @@ class SIS18_mixed_beam_Profile:
 		)
 		res['spill:mixed'] =  DataField(
 			buffer_dependance = ['turn', 'spill:ion1', 'spill:ion2'], 
-			callback = partial(mixed_spill_callback, dashboard, start_count_at_turn = 500),
+			callback = partial(mixed_spill_callback, dashboard, start_count_at_turn = self.start_count_at_turn),
 			callback_level = 1,
 			plot_from = ['turn', 'spill:ion1', 'spill:ion2'],
 			plot_order = [
@@ -102,16 +104,16 @@ class SIS18_mixed_beam_Profile:
 			plot_layout = partial(spill_layout, title = "Spill, mixed"),
 			category = "Turn By Turn"
 		)
-		res['spill:mixed:relation'] =  DataField(
+		res['spill:mixed:ratio'] =  DataField(
 			buffer_dependance = ['turn', 'spill:ion1', 'spill:ion2'],
-			output_buffers = ['spill:mixed:relation'],
-			callback = partial(relation_mixed_spill_callback, dashboard, start_count_at_turn = 500),
+			output_buffers = ['spill:mixed:ratio'],
+			callback = partial(ratio_mixed_spill_callback, dashboard, start_count_at_turn = self.start_count_at_turn),
 			callback_level = 1,
-			plot_from = ['turn', 'spill:mixed:relation'],
+			plot_from = ['turn', 'spill:mixed:ratio'],
 			plot_order = [
 				{
 					"x": 'turn',
-					"y": 'spill:mixed:relation',
+					"y": 'spill:mixed:ratio',
 					"settings": dict(
 						mode = "lines",
 						line = dict(
@@ -129,7 +131,7 @@ class SIS18_mixed_beam_Profile:
 		res['spill:ion1:accumulated'] =  DataField(
 			buffer_dependance = ['turn', 'spill:ion1'], 
 			output_buffers = ['spill:ion1:accumulated'],
-			callback = partial(ion_accumulated_spill_callback, dashboard, 1),
+			callback = partial(ion_accumulated_spill_callback, dashboard, 1, start_count_at_turn = self.start_count_at_turn),
 			callback_level = 1,
 			plot_from = ['turn', 'spill:ion1'],
 			plot_order = [
@@ -152,7 +154,7 @@ class SIS18_mixed_beam_Profile:
 		res['spill:ion2:accumulated'] =  DataField(
 			buffer_dependance = ['turn', 'spill:ion2'], 
 			output_buffers = ['spill:ion2:accumulated'],
-			callback = partial(ion_accumulated_spill_callback, dashboard, 2),
+			callback = partial(ion_accumulated_spill_callback, dashboard, 2, start_count_at_turn = self.start_count_at_turn),
 			callback_level = 1,
 			plot_from = ['turn', 'spill:ion2'],
 			plot_order = [
@@ -174,7 +176,7 @@ class SIS18_mixed_beam_Profile:
 		)
 		res['spill:mixed:accumulated'] =  DataField(
 			buffer_dependance = ['turn', 'spill:ion1:accumulated', 'spill:ion2:accumulated'], 
-			callback = partial(mixed_accumulated_spill_callback, dashboard),
+			callback = partial(mixed_accumulated_spill_callback, dashboard, start_count_at_turn = self.start_count_at_turn),
 			callback_level = 2,
 			plot_from = ['turn', 'spill:ion1:accumulated', 'spill:ion2:accumulated'],
 			plot_order = [
@@ -274,24 +276,21 @@ def mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: in
 	if dashboard.data_buffer['spill:ion2'].last_batch_id != dashboard.current_batch_id:
 		ion_spill_callback(dashboard, 2, start_count_at_turn)
 
-def relation_mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def ratio_mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
 	if dashboard.data_buffer['spill:ion1'].last_batch_id != dashboard.current_batch_id:
 		ion_spill_callback(dashboard, 1, start_count_at_turn)
 	
 	if dashboard.data_buffer['spill:ion2'].last_batch_id != dashboard.current_batch_id:
 		ion_spill_callback(dashboard, 2, start_count_at_turn)
 
-	ion1_spill = np.array(dashboard.data_buffer['spill:ion1'].recent_data)
-	ion2_spill = np.array(dashboard.data_buffer['spill:ion2'].recent_data)
+	ion1_spill = dashboard.data_buffer['spill:ion1'].recent_data
+	ion2_spill = dashboard.data_buffer['spill:ion2'].recent_data
 
-	relation = np.divide(
-		ion1_spill, 
-		ion2_spill,
-		out = np.zeros_like(ion1_spill, dtype = float),
-    	where = ion2_spill != 0
-		)
+	ratios = [Ratio(a, b) for a, b in zip(ion1_spill, ion2_spill)]
 
-	dashboard.data_buffer['spill:mixed:relation'].extend(relation, batch_id = dashboard.current_batch_id)
+	i = 14000
+	print(ion1_spill[i], ion2_spill[i], ratios[i])
+	dashboard.data_buffer['spill:mixed:ratio'].extend(ratios, batch_id = dashboard.current_batch_id)
 
 def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwargs):
 	"""
