@@ -8,10 +8,10 @@ from toolbox.dashboard.profiles.sis18 import SIS18Profile
 
 
 class SIS18_mixed_beam_Profile:
-	def __init__(self, *, ion1_chi: float, ion2_chi: float, start_count_at_turn: int):
-		self.ion1_chi = ion1_chi
-		self.ion2_chi = ion2_chi
-		
+	def __init__(self, *, ion1: dict, ion2: dict, start_count_at_turn: int):
+		self.ion1 = ion1
+		self.ion2 = ion2
+
 		self.start_count_at_turn = start_count_at_turn
 
 		self.base_profile = SIS18Profile(start_count_at_turn = self.start_count_at_turn)
@@ -38,7 +38,7 @@ class SIS18_mixed_beam_Profile:
 						line = dict(
 							color = "blue"
 						),
-						name = "Ion 1"
+						name = self.ion1.get('name', "Ion 1")
 					)
 				}
 			],
@@ -61,7 +61,7 @@ class SIS18_mixed_beam_Profile:
 						line = dict(
 							color = "blue"
 						),
-						name = "Ion 2"
+						name = self.ion2.get('name', "Ion 2")
 					)
 				}
 			],
@@ -83,7 +83,7 @@ class SIS18_mixed_beam_Profile:
 						line = dict(
 							color = "blue"
 						),
-						name = "Ion 1",
+						name = self.ion1.get('name', "Ion 1"),
 						showlegend = True
 					)
 				},
@@ -95,7 +95,7 @@ class SIS18_mixed_beam_Profile:
 						line = dict(
 							color = "red"
 						),
-						name = "Ion 2",
+						name = self.ion2.get('name', "Ion 2"),
 						showlegend = True
 					)
 				}
@@ -119,13 +119,13 @@ class SIS18_mixed_beam_Profile:
 						line = dict(
 							color = "blue"
 						),
-						name = "Ion 1/Ion 2",
-						showlegend = True
+						name = f"{self.ion1.get('name', "Ion 1")}/{self.ion2.get('name', "Ion 2")}",
+						showlegend = False
 					)
 				},
 			],
 			bin = dict(enabled = True, x = "middle", y = "sum"),
-			plot_layout = partial(spill_layout, title = "Spill, mixed; Ion 1 / Ion 2"),
+			plot_layout = partial(spill_layout, title = f"Spill, mixed; {self.ion1.get('name', "Ion 1")}/{self.ion2.get('name', "Ion 2")}"),
 			category = "Turn By Turn"
 		)
 		res['spill:ion1:accumulated'] =  DataField(
@@ -143,7 +143,7 @@ class SIS18_mixed_beam_Profile:
 						line = dict(
 							color = "blue"
 						),
-						name = "Ion 1"
+						name = self.ion1.get('name', "Ion 1")
 					)
 				}
 			],
@@ -166,7 +166,7 @@ class SIS18_mixed_beam_Profile:
 						line = dict(
 							color = "blue"
 						),
-						name = "Ion 2"
+						name = self.ion2.get('name', "Ion 2")
 					)
 				}
 			],
@@ -188,7 +188,7 @@ class SIS18_mixed_beam_Profile:
 						line = dict(
 							color = "blue"
 						),
-						name = "Ion 1",
+						name = self.ion1.get('name', "Ion 1"),
 						showlegend = True
 					)
 				},
@@ -200,7 +200,7 @@ class SIS18_mixed_beam_Profile:
 						line = dict(
 							color = "red"
 						),
-						name = "Ion 2",
+						name = self.ion2.get('name', "Ion 2"),
 						showlegend = True
 					)
 				}
@@ -237,8 +237,8 @@ class SIS18_mixed_beam_Profile:
 		for key in dashboard.data_to_expect:
 			if key == 'extracted_at_ES:ion':
 				ion_arr = np.zeros_like(lost_particles_at_ES_septum.chi, dtype = int)
-				ion_arr[np.abs(lost_particles_at_ES_septum.chi - self.ion1_chi) < 1e-7] = 1
-				ion_arr[np.abs(lost_particles_at_ES_septum.chi - self.ion2_chi) < 1e-7] = 2
+				ion_arr[np.abs(lost_particles_at_ES_septum.chi - self.ion1['chi']) < 1e-7] = 1
+				ion_arr[np.abs(lost_particles_at_ES_septum.chi - self.ion2['chi']) < 1e-7] = 2
 				
 				data_map[key] = ion_arr
 
