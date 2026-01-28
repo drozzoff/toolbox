@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html, no_update, MATCH, clientside_callback
+from dash import dcc, html, no_update, MATCH
 from dash.dependencies import Output, Input, State
 from flask_compress import Compress
 import plotly.graph_objs as go
