@@ -109,48 +109,60 @@ class ExtractionDashboard:
 	def _set_dependencies(self):
 
 		self.data_fields = self.profile.make_datafields(self)
-		self.callbacks = []
+		self.info_fields = self.profile.make_infofields(self)
 
+		self.callbacks, buffer_keys = [], []
 		print(self.data_to_monitor)
 
-		buffer_keys = []
+		self.info_dict = {}
 
+		fields = self.data_fields | self.info_fields
 		for data_key in self.data_to_monitor:
-			if data_key not in self.data_fields:
-				raise ValueError(f"Unsupported data requested: {data_key}. Supported data: {self.data_fields.keys()}")
+			if data_key not in fields:
+				raise ValueError(f"Unsupported data requested: {data_key}. Supported data: {fields.keys()}")
 
 			# Creating primary and secondary data buffers
-			for key in self.data_fields[data_key].buffer_dependance:
+			for key in fields[data_key].buffer_dependance:
 				if not key in buffer_keys:
 					buffer_keys.append(key)
 			
 			# creating output buffers for the callbacks
-			if self.data_fields[data_key].output_buffers is not None:
-				for key in self.data_fields[data_key].output_buffers:
+			if hasattr(fields[data_key], 'output_buffers') and fields[data_key].output_buffers is not None:
+				for key in fields[data_key].output_buffers:
 					if not key in buffer_keys:
 						buffer_keys.append(key)
 
-			# activating the DataField
-			self.data_fields[data_key].state = True
-
+			# activating the field
+			for field in [self.data_fields, self.info_fields]:
+				try:
+					field[data_key].state = True
+				except KeyError: pass
+			
 			# saving the callbacks
-			if self.data_fields[data_key].callback is not None:
+			if fields[data_key].callback is not None:
 				self.callbacks.append({
 					'name': data_key,
-					'level': self.data_fields[data_key].callback_level,
-					'callback': self.data_fields[data_key].callback
+					'level': fields[data_key].callback_level,
+					'callback': fields[data_key].callback
 				})
+			
+			if data_key in self.info_fields:
+				tmp_dct = {x: None for x in self.info_fields[data_key].output_info}
+				self.info_dict = self.info_dict | tmp_dct
+		
+		print(self.info_dict)
+
 		self.callbacks.sort(key = lambda c: c['level'])
 
 		# evaluating the data to be provided
 		# and the buffers to be created
 		# self.data_buffer contains the keys mixed of what user provides
 		# and what is automatically generated in a callback
-		datafields_keys = list(self.data_fields.keys())
+		fields_keys = list(fields.keys())
 
 		buffers_to_create = buffer_keys.copy()
 
-		buffer_keys_masked = list(filter(lambda key: key in datafields_keys, buffer_keys))
+		buffer_keys_masked = list(filter(lambda key: key in fields_keys, buffer_keys))
 		print(f"Pass 0: {buffer_keys}")
 		print(f"\t not unique values = {buffer_keys_masked}")
 
@@ -158,14 +170,14 @@ class ExtractionDashboard:
 		while buffer_keys_masked:
 			for key in buffer_keys_masked:
 				buffer_keys.remove(key)
-				buffer_keys.extend(self.data_fields[key].buffer_dependance)
-				buffers_to_create.extend(self.data_fields[key].buffer_dependance)
+				buffer_keys.extend(fields[key].buffer_dependance)
+				buffers_to_create.extend(fields[key].buffer_dependance)
 
 			buffer_keys = list(set(buffer_keys))
 
 			print(f"Pass {index}: {buffer_keys}")
 			index += 1
-			buffer_keys_masked = list(filter(lambda key: key in datafields_keys, buffer_keys))
+			buffer_keys_masked = list(filter(lambda key: key in fields_keys, buffer_keys))
 			print(f"\t not unique values = {buffer_keys_masked}")
 
 			if index == 10:

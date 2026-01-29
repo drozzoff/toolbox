@@ -211,6 +211,11 @@ class SIS18_mixed_beam_Profile:
 		)
 		return res
 
+	def make_infofields(self, dashboard: ExtractionDashboard):
+		res = self.base_profile.make_infofields(dashboard)
+
+		return res
+
 	def read_file(self, filename: str) -> xt.Particles:
 		return self.base_profile.read_file(filename)
 
