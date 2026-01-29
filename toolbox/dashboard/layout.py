@@ -12,52 +12,60 @@ def make_layout(dashboard: ExtractionDashboard):
 		'separatrix': [],
 		'special': []
 	}
+	info_divs = []
 	for key in dashboard.data_to_monitor:
-		
-		# Tab 1 - Turn dependent data
-		if dashboard.data_fields[key].category == "Turn By Turn":
-			divs['turn_dependent_data'].append(	
-				html.Div([
-					dcc.Graph(
-						id = {"type": "stream-graph","key": key},
-						figure = dashboard.plot_figure(key, init_run = True),
-						style = {"width": "100%"},
-						config = {"responsive": True}
-					),
-				], style = {'display': 'flex', "flexDirection":"column", 'gap': '10px'})
-			)
-		
-		# Tab 2 - Phase space
-		if dashboard.data_fields[key].category == "Phase Space":
-			divs['phase_space'].append(
-				html.Div([
-					dcc.Graph(
-						id = {"type": "stream-graph","key": key},
-						figure = dashboard.plot_figure(key, init_run = True)
-					)
-				], style = {'display': 'flex', 'gap': '10px'})
-			)
-		
-		# Tab 3 - Separatrix
-		if dashboard.data_fields[key].category == "Separatrix":
-			divs['separatrix'].append(
-				html.Div([
-					dcc.Graph(
-						id = {"type": "stream-graph","key": key},
-						figure = dashboard.plot_figure(key, init_run = True)
-					)
-				], style = {'display': 'flex', 'gap': '10px'}))
+		if key in dashboard.data_fields:
+			# Tab 1 - Turn dependent data
+			if dashboard.data_fields[key].category == "Turn By Turn":
+				divs['turn_dependent_data'].append(	
+					html.Div([
+						dcc.Graph(
+							id = {"type": "stream-graph","key": key},
+							figure = dashboard.plot_figure(key, init_run = True),
+							style = {"width": "100%"},
+							config = {"responsive": True}
+						),
+					], style = {'display': 'flex', "flexDirection":"column", 'gap': '10px'})
+				)
+			
+			# Tab 2 - Phase space
+			if dashboard.data_fields[key].category == "Phase Space":
+				divs['phase_space'].append(
+					html.Div([
+						dcc.Graph(
+							id = {"type": "stream-graph","key": key},
+							figure = dashboard.plot_figure(key, init_run = True)
+						)
+					], style = {'display': 'flex', 'gap': '10px'})
+				)
+			
+			# Tab 3 - Separatrix
+			if dashboard.data_fields[key].category == "Separatrix":
+				divs['separatrix'].append(
+					html.Div([
+						dcc.Graph(
+							id = {"type": "stream-graph","key": key},
+							figure = dashboard.plot_figure(key, init_run = True)
+						)
+					], style = {'display': 'flex', 'gap': '10px'}))
 
-		if dashboard.data_fields[key].category == "Biomed":
-			divs['special'].append(
-				html.Div([
-					dcc.Graph(
-						id = {"type": "stream-graph","key": key},
-						figure = dashboard.plot_figure(key, init_run = True)
-					)
-				], style = {'display': 'flex', 'gap': '10px'})
+			if dashboard.data_fields[key].category == "Biomed":
+				divs['special'].append(
+					html.Div([
+						dcc.Graph(
+							id = {"type": "stream-graph","key": key},
+							figure = dashboard.plot_figure(key, init_run = True)
+						)
+					], style = {'display': 'flex', 'gap': '10px'})
+				)
+		if key in dashboard.info_fields:
+			info_divs.append(
+				html.Div(
+					id = {"type": "info", "key": key},
+					className =  "info-panel"
+				)
 			)
-
+	print(info_divs)
 	tabs = []
 	for key in divs:
 		if divs[key] != []:
@@ -187,7 +195,7 @@ def make_layout(dashboard: ExtractionDashboard):
 						],
 					),
 					html.Div(
-						className = "right-panel",
+						className = "plot-panel",
 						children = [
 							html.Div(
 								className = "card main-card",
@@ -200,6 +208,10 @@ def make_layout(dashboard: ExtractionDashboard):
 							),
 						],
 					),
+					html.Div(
+						className = "right-panel",
+						children = info_divs
+					)
 				],
 			),
 			html.Div(

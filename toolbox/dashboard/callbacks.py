@@ -331,4 +331,3 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 			print(f"[ERROR] reading cycle {cycle_id}: {e}")
 			traceback.print_exc()
 			return no_update
-

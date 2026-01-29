@@ -3,7 +3,7 @@ from functools import partial
 import numpy as np
 import xtrack as xt
 import pickle as pk
-from toolbox.dashboard.profiles.datafield import DataField
+from toolbox.dashboard.profiles.datafield import DataField, InfoField
 
 
 class SIS18Profile:
@@ -298,6 +298,16 @@ class SIS18Profile:
 			),
 		}
 
+	def make_infofields(self, dashboard: ExtractionDashboard):
+		return {
+			'spill:accumulated:info': InfoField(
+				buffer_dependance = ['spill:accumulated'],
+				output_info = ["spill:accumulated:info"],
+				callback = partial(spill_info_callback, dashboard),
+				callback_level = 2,
+			)
+		}
+
 	def read_file(self, filename: str) -> xt.Particles:
 		with open(filename, 'rb') as fid:
 			particles = xt.Particles.from_dict(pk.load(fid))
@@ -380,7 +390,7 @@ class SIS18Profile:
 		
 		return data_mapping
 
-# callbacks
+# DataField callbacks
 def ES_inside_losses_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
 
 	x = np.array(dashboard.data_buffer['extracted_at_ES:x'].recent_data)
@@ -472,6 +482,13 @@ def accumulated_ES_losses_callback(dashboard: ExtractionDashboard):
 
 	dashboard.data_buffer['ES_septum_losses:accumulated'].extend(lost_inside + lost_outside, batch_id = dashboard.current_batch_id)
 
+# InfoField callbacks
+def spill_info_callback(dashboard: ExtractionDashboard):
+	if dashboard.data_buffer['spill:accumulated'].last_batch_id != dashboard.current_batch_id:
+		accumulated_spill_callback(dashboard)
+
+	dashboard.info_dict['spill:accumulated:info'] = dashboard.data_buffer['spill:accumulated'].data[-1]
+
 # plotting layouts
 def intensity_layout(fig: go.Figure):
 	fig.update_layout(
@@ -506,14 +523,6 @@ def ES_losses_layout(fig: go.Figure):
 	)
 
 def spill_layout(fig: go.Figure):
-	if False:
-		fig.update_xaxes(
-			type = "date",
-			tickformat = "%H:%M:%S",
-			tickangle = 0,
-			showgrid = True,
-		)
-
 	fig.update_layout(
 		title = 'Spill',
 		xaxis_title = 'turn',
@@ -523,14 +532,6 @@ def spill_layout(fig: go.Figure):
 	)
 
 def accumulated_spill_layout(fig: go.Figure):
-	if False:
-		fig.update_xaxes(
-			type = "date",
-			tickformat = "%H:%M:%S",
-			tickangle = 0,
-			showgrid = True,
-		)
-
 	fig.update_layout(
 		title = 'Spill accumulated',
 		xaxis_title = 'turn',
