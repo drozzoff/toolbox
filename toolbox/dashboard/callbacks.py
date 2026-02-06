@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dash import Input, Output, State, MATCH, no_update, Dash
+from dash.exceptions import PreventUpdate
 import os
 import traceback
 from pathlib import Path
@@ -56,64 +57,78 @@ def _bin_array(arr, bin_length: int, how: str) -> list:
 		raise TypeError(f"Unsupported data type: {type(arr[0])}")
 
 def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
-
+	
+	#--General callbacks--
 	@app.callback(
 		Output("refresh", "disabled"),
 		Input("mode-switch", "value"),
 	)
-	def toggle_interval(mode):
-		return (mode == "file")
+	def toggle_interval(mode: str | None) -> bool:
+		"""
+		Toggles on/off the page update depending on the mode selected.
+		For `mode` in `["file", None]` - swtiches off, for `live` - switches on.
 
+		Parameters
+		----------
+		mode
+			Either `live`, `file`, or None
+		"""
+		stop_update = (mode == "file") or (mode is None)
+		return stop_update
+
+	#--Live streaming callbacks--
 	@app.callback(
-		Output({"type":"stream-graph", "key": MATCH}, "figure"),
+		Output("listener-trigger", "children"),
 		Input("mode-switch", "value"),
-		Input("bin-length", "value"),
-		Input("cycle-selector", "value"),
-		Input("cycle-load-trigger", "children"),
-		State({"type":"stream-graph", "key": MATCH}, "id"),
-		prevent_initial_call = True,
 	)
-	def render_full_figure(mode, bin_length, cycle_value, _loaded_trigger, graph_id):
-		if mode != "file":
-			return no_update
-		
-		data_key = graph_id["key"]
-		df = dashboard.data_fields[data_key]
-		bin_info = df.bin
+	def _trigger_listener(mode: str | None):
+		"""
+		Switches on the listener daemon when the mode is `live`.
+		In other cases, stops it.
 
-		buff = {}
-		with dashboard._buflock:
-			for i, tmp in enumerate(df.plot_order):
-				raw_x = dashboard.data_buffer[tmp["x"]].data
-				raw_y = dashboard.data_buffer[tmp["y"]].data
+		Parameters
+		----------
+		mode
+			Either `live`, `file`, or None
+		"""
+		dashboard._clear_buffer()
 
-				do_bin = bin_info and bin_info.get("enabled") and (bin_length and bin_length > 1)
-				if do_bin:
-					x = _bin_array(raw_x, bin_length, bin_info["x"])
-					y = _bin_array(raw_y, bin_length, bin_info["y"])
-				else:
-					x = raw_x
-					try:
-						y = [float(v) for v in raw_y]
-					except TypeError:
-						y = [v.value() for v in raw_y]
+		if mode is None:
+			raise PreventUpdate
 
-				if tmp['x'] not in buff:
-					buff[tmp['x']] = x
-				if tmp['y'] not in buff:
-					buff[tmp['y']] = y
-		
-		return dashboard.plot_figure(data_key, **buff)
+		if mode == "live":
+			if not getattr(dashboard, "_listener_thread", None):
+				dashboard.start_listener()
+		else:
+			if getattr(dashboard, "_listener_thread", None):
+				dashboard.stop_listener()
+				print(f"[INFO] Listener terminated.")
+
+				del dashboard._listener_thread
+		return ""
 
 	@app.callback(
 		Output({"type": "stream-graph", "key": MATCH}, "extendData"),
-		Input("refresh", "n_intervals"),
 		State("mode-switch", "value"),
-		State({"type":"stream-graph", "key": MATCH}, "id"),
+		State({"type": "stream-graph", "key": MATCH}, "id"),
 		State("bin-length", "value"),
 	)
-	def stream_data(n_intervals, mode, graph_id, bin_length):
-		if mode == "file":
+	def stream_data(mode: str | None, graph_id: dict, bin_length: int) -> tuple[dict, list, int]:
+		"""
+		Streams the data to a graph via `extendData`. Like that one does not have to rerender 
+		the figure evey time the new data arrives.
+
+		Parameters
+		----------
+		mode
+			Either `live`, `file`, or None
+		graph_id
+			`dict` with a `dcc.Graph` id in a form `{"type": "stream-graph", "key": MATCH}`.
+			With `MATCH` being unique id of a figure (Eg. `'intensity'`)
+		bin_length
+			Length of turns in 1 bin
+		"""
+		if mode in {"file", None}:
 			return no_update
 
 		data_key = graph_id["key"]
@@ -165,13 +180,7 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 
 				if ptr >= total:
 					return no_update
-				
-				print("KEY", data_key,
-					"bin", bin_length,
-					"ptr_bin", ptr,
-					"raw_total", len(dashboard.data_buffer[trace_bufs[0]].data),
-					"total_binned", total)
-				
+
 				end = min(ptr + dashboard.CHUNK_SIZE, total)
 
 				raw_start = ptr * bin_length
@@ -199,24 +208,7 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 
 				return dict(x = xs, y = ys), trace_indices, total
 
-	@app.callback(
-		Output("listener-trigger", "children"),
-		Input("mode-switch", "value"),
-	)
-	def _trigger_listener(mode):		
-		dashboard._clear_buffer()
-
-		if mode == "live":
-			if not getattr(dashboard, "_listener_thread", None):
-				dashboard.start_listener()
-		else:
-			if getattr(dashboard, "_listener_thread", None):
-				dashboard.stop_listener()
-				print(f"[INFO] Listener terminated.")
-
-				del dashboard._listener_thread
-		return ""
-
+	#--Reading from file callbacks--
 	@app.callback(
 		Output("file-suggest", "options"),
 		Input("file-path", "value"),
@@ -254,6 +246,48 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 
 		except PermissionError:
 			return [{"label": "Permission denied", "value": ""}]
+
+
+	@app.callback(
+		Output({"type":"stream-graph", "key": MATCH}, "figure"),
+		Input("mode-switch", "value"),
+		Input("bin-length", "value"),
+		Input("cycle-selector", "value"),
+		Input("cycle-load-trigger", "children"),
+		State({"type":"stream-graph", "key": MATCH}, "id"),
+		prevent_initial_call = True,
+	)
+	def render_full_figure(mode, bin_length, cycle_value, _loaded_trigger, graph_id):
+		if mode != "file":
+			return no_update
+		
+		data_key = graph_id["key"]
+		df = dashboard.data_fields[data_key]
+		bin_info = df.bin
+
+		buff = {}
+		with dashboard._buflock:
+			for i, tmp in enumerate(df.plot_order):
+				raw_x = dashboard.data_buffer[tmp["x"]].data
+				raw_y = dashboard.data_buffer[tmp["y"]].data
+
+				do_bin = bin_info and bin_info.get("enabled") and (bin_length and bin_length > 1)
+				if do_bin:
+					x = _bin_array(raw_x, bin_length, bin_info["x"])
+					y = _bin_array(raw_y, bin_length, bin_info["y"])
+				else:
+					x = raw_x
+					try:
+						y = [float(v) for v in raw_y]
+					except TypeError:
+						y = [v.value() for v in raw_y]
+
+				if tmp['x'] not in buff:
+					buff[tmp['x']] = x
+				if tmp['y'] not in buff:
+					buff[tmp['y']] = y
+		
+		return dashboard.plot_figure(data_key, **buff)
 
 	@app.callback(
 		Output("file-path", "value"),

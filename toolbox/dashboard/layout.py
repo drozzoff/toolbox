@@ -104,14 +104,16 @@ def make_layout(dashboard: ExtractionDashboard):
 												"Mode",
 												className = "label",
 											),
-											dcc.RadioItems(
-												id = "mode-switch",
-												options = [
+											dcc.Dropdown(
+												id="mode-switch",
+												options=[
 													{"label": "Live", "value": "live"},
 													{"label": "From file", "value": "file"},
 												],
-												value = "live",
-												className = "radio",
+												value = None,
+												placeholder = "Select mode…",
+												clearable = False,
+												className = "dropdown small",
 											),
 										],
 									),
