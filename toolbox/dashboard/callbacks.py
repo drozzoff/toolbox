@@ -109,11 +109,12 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 
 	@app.callback(
 		Output({"type": "stream-graph", "key": MATCH}, "extendData"),
+		Input("refresh", "n_intervals"),
 		State("mode-switch", "value"),
 		State({"type": "stream-graph", "key": MATCH}, "id"),
 		State("bin-length", "value"),
 	)
-	def stream_data(mode: str | None, graph_id: dict, bin_length: int) -> tuple[dict, list, int]:
+	def stream_data(_, mode: str | None, graph_id: dict, bin_length: int) -> tuple[dict, list, int]:
 		"""
 		Streams the data to a graph via `extendData`. Like that one does not have to rerender 
 		the figure evey time the new data arrives.
