@@ -40,7 +40,7 @@ class DummyGenerator:
 
 					data[key] = np.random.normal(size = step).tolist()
 				
-				print(data)
+				#print(data)
 			self.sock.sendall((json.dumps(data) + '\n').encode())
 			_current_turn += step
 			time.sleep(time_delta)
