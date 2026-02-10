@@ -23,10 +23,11 @@ class DataField:
 class InfoField:
 	"""Simple class to store the info/summary of the buffers"""
 	buffer_dependance: list[str] = field(default_factory = list)
-	output_info: list[str] | str | None = None
+	output_info: dict | None = None
 	callback: Optional[callable] = None
 	callback_level: int | None = None
 	state: bool = False
+	template: str =""
 
 
 @dataclass

@@ -1,5 +1,16 @@
 from __future__ import annotations
 from dash import html, dcc
+from string import Formatter
+
+
+def extract_keys(template: str) -> set[str]:
+	formatter = Formatter()
+
+	return {
+		field_name
+		for _, field_name, _, _ in formatter.parse(template)
+		if field_name
+	}
 
 def make_layout(dashboard: ExtractionDashboard):
 
@@ -59,13 +70,14 @@ def make_layout(dashboard: ExtractionDashboard):
 					], style = {'display': 'flex', 'gap': '10px'})
 				)
 		if key in dashboard.info_fields:
+			field = dashboard.info_fields.get(key)
 			info_divs.append(
-				html.Div(
-					id = {"type": "info", "key": key},
+				dcc.Markdown(
+					id = {"type": "info-md", "key": key},
+					children = field.template.format(**{k: dashboard.info_dict.get(k) for k in extract_keys(field.template)}),
 					className =  "info-panel"
 				)
 			)
-	print(info_divs)
 	tabs = []
 	for key in divs:
 		if divs[key] != []:
@@ -212,10 +224,17 @@ def make_layout(dashboard: ExtractionDashboard):
 					),
 					html.Div(
 						className = "right-panel",
-						children = info_divs
-					)
+						children = [
+							html.Div(
+									className = "card main-card",
+									children = info_divs,
+								),
+						],
+					),
+
 				],
 			),
+
 			html.Div(
 				id = "xaxis-trigger",
 				style = {"display": "none"},
