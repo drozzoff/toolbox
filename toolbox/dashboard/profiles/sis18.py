@@ -300,12 +300,18 @@ class SIS18Profile:
 
 	def make_infofields(self, dashboard: ExtractionDashboard):
 		return {
-			'spill:accumulated:info': InfoField(
-				buffer_dependance = ['spill:accumulated'],
-				output_info = ["spill:accumulated:info"],
-				callback = partial(spill_info_callback, dashboard),
-				callback_level = 2,
-			)
+			'particles:info': InfoField(
+				buffer_dependance = ['Nparticles'],
+				output_info = ["particles:info"],
+				callback = partial(particles_info_callback, dashboard),
+				callback_level = 0,
+			),
+#			'spill:accumulated:info': InfoField(
+#				buffer_dependance = ['spill:accumulated'],
+#				output_info = ["spill:accumulated:info"],
+#				callback = partial(spill_info_callback, dashboard),
+#				callback_level = 2,
+#			)
 		}
 
 	def read_file(self, filename: str) -> xt.Particles:
@@ -483,6 +489,13 @@ def accumulated_ES_losses_callback(dashboard: ExtractionDashboard):
 	dashboard.data_buffer['ES_septum_losses:accumulated'].extend(lost_inside + lost_outside, batch_id = dashboard.current_batch_id)
 
 # InfoField callbacks
+def particles_info_callback(dashboard: ExtractionDashboard):
+	particles_alive = dashboard.data_buffer['Nparticles'][-1]
+	init_particles = dashboard.data_buffer['Nparticles'][0]
+	
+	print("Callback fired")
+	print(f"Particles alive **{particles_alive}/{init_particles}")
+
 def spill_info_callback(dashboard: ExtractionDashboard):
 	if dashboard.data_buffer['spill:accumulated'].last_batch_id != dashboard.current_batch_id:
 		accumulated_spill_callback(dashboard)

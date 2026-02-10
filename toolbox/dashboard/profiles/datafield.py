@@ -26,6 +26,7 @@ class InfoField:
 	output_info: list[str] | str | None = None
 	callback: Optional[callable] = None
 	callback_level: int | None = None
+#	render_message: 
 	state: bool = False
 
 

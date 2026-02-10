@@ -62,6 +62,12 @@ class DataBuffer:
 		self.recent_data = []
 		self.last_batch_id = -1
 
+	def last(self):
+		return self.data[-1]
+
+	def first(self):
+		return self.data[0]
+
 	def __str__(self):
 		res = f"data = {self.data}\n"
 		res += f"Received data since last update = {self.last_batch_id == -1}\n"
