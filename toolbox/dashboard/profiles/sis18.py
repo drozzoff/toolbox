@@ -300,9 +300,10 @@ class SIS18Profile:
 
 	def make_infofields(self, dashboard: ExtractionDashboard):
 		return {
-			'particles:info': InfoField(
+			'particles:alive': InfoField(
 				buffer_dependance = ['Nparticles'],
-				output_info = ["particles:info"],
+				output_info = ["particles_alive", "particles_total"],
+				template = '**Particles alive:** {particles_alive}/{particles_total}',
 				callback = partial(particles_info_callback, dashboard),
 				callback_level = 0,
 			),
@@ -489,12 +490,14 @@ def accumulated_ES_losses_callback(dashboard: ExtractionDashboard):
 	dashboard.data_buffer['ES_septum_losses:accumulated'].extend(lost_inside + lost_outside, batch_id = dashboard.current_batch_id)
 
 # InfoField callbacks
+
 def particles_info_callback(dashboard: ExtractionDashboard):
-	particles_alive = dashboard.data_buffer['Nparticles'][-1]
-	init_particles = dashboard.data_buffer['Nparticles'][0]
+	dashboard.info_dict['particles_alive'] = dashboard.data_buffer['Nparticles'].last()
 	
-	print("Callback fired")
-	print(f"Particles alive **{particles_alive}/{init_particles}")
+	if not dashboard.info_dict['particles_total']:
+		dashboard.info_dict['particles_total'] = dashboard.data_buffer['Nparticles'].first()
+
+	print(dashboard.info_dict)
 
 def spill_info_callback(dashboard: ExtractionDashboard):
 	if dashboard.data_buffer['spill:accumulated'].last_batch_id != dashboard.current_batch_id:

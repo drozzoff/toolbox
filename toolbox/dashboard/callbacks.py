@@ -8,6 +8,7 @@ import numpy as np
 import numbers
 import pandas as pd
 import datetime
+from string import Formatter
 from toolbox.dashboard.profiles.datafield import Ratio
 
 
@@ -113,6 +114,30 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 			for data_key in dashboard.data_fields:
 				dashboard.data_fields[data_key].buffer_pointer = 0
 				dashboard.data_fields[data_key].buffer_pointer_bin = 0
+
+	@app.callback(
+		Output({"type": "info-md", "key": MATCH}, "children"),
+		Input("refresh", "n_intervals"),
+		State({"type":"info-md", "key": MATCH}, "id"),
+	)
+	def update_values(_n_intervals, field_id):
+		"""
+		
+		"""
+		field = dashboard.info_fields[field_id["key"]]
+
+		formatter = Formatter()
+		parsed_keys = {field_name for _, field_name, _, _ in formatter.parse(field.template)}
+
+		res_dict = {}
+		for key in parsed_keys:
+			value = dashboard.info_dict.get(key)
+			if value is not None:
+				res_dict[key] = int(value * 1000)
+			else:
+				res_dict[key] = value
+			
+		return field.template.format(**res_dict)
 
 	#--Live streaming callbacks--
 	@app.callback(
