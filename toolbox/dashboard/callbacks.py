@@ -348,12 +348,13 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 
 	@app.callback(
 		Output({"type":"stream-graph", "key": MATCH}, "figure"),
-		Input("mode-switch", "value"),
-		State("bin-length", "value"),
+		Input("cycle-load-trigger","children"),
+		Input("bin-length", "value"),
+		State("mode-switch", "value"),
 		State({"type":"stream-graph", "key": MATCH}, "id"),
 		prevent_initial_call = True,
 	)
-	def render_full_figure(mode: str, bin_length: int, graph_id):
+	def render_full_figure(cycle_loaded,  bin_length: int, mode: str,graph_id):
 		"""
 		Build the whole figure when reading from file. Is alternative to `stream_data`
 		when the data is read from a file
@@ -370,6 +371,7 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 		if not is_file(mode):
 			return no_update
 		
+		print("Rendering the whole figure")
 		data_key = graph_id["key"]
 		df = dashboard.data_fields[data_key]
 		bin_info = df.bin
