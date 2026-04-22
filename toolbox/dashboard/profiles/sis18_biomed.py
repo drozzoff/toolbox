@@ -52,6 +52,9 @@ class SIS18_biomed_Profile:
 			),
 		}
 	
+	def make_infofields(self, dashboard: ExtractionDashboard):
+		return {}
+
 	def read_file(self, filename: str) -> pd.DataFrame:
 		return pd.read_parquet(filename)
 
