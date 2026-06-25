@@ -5,4 +5,4 @@ from toolbox.dashboard import ExtractionDashboard, DummyGenerator
 from toolbox.tune import *
 from toolbox.beamlines import exc_freq_chirp, _remove_inactive_multipoles_fix
 from toolbox.multigpu import track_multigpu
-from toolbox.SIS18 import modulated_bpsk, plain_bpsk
+from toolbox.SIS18 import *
