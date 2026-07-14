@@ -24,24 +24,27 @@ def adjust_Bramp(
 	rho
 		Bending radius [m]
 	Bramp
-		Reference B ramp speed [T/ms]
+		Reference B ramp speed [T/s]
 	ramp_start
-		Moment in time the ramp statrs [ms]
+		Moment in time the ramp statrs [s]
 	t_rounding
-		Rounding time at the start/end of the ramp [ms]
+		Rounding time at the start/end of the ramp [s]
 	Returns
 	-------
 	ramp_stop : float
-		Moment of the time the B ramp is finished [ms]
+		Moment of the time the B ramp is finished [s]
 	Bramp_adjusted : float
-		Adjusted B ramp speed. [T/ms]
+		Adjusted B ramp speed. [T/s]
 	"""
-	# making the ramp_stop time to be compliable with 1 microsecond step
-	ramp_stop_int = int(ramp_start + t_rounding + (rigidity_final - rigidity_init) / (Bramp * rho))
+	# making the ramp_stop time to be compliable with 1 milisecond step
+
+	print(f"Initial ramp stop {ramp_start + t_rounding + (rigidity_final - rigidity_init) / (Bramp * rho)} s")
+	ramp_stop_int = ((ramp_start + t_rounding + (rigidity_final - rigidity_init) / (Bramp * rho)) // 1e-3) * 1e-3
+	print(f"Cut to {ramp_stop_int} s")
 	
 	Bramp_adjusted = (rigidity_final - rigidity_init) / (rho * (ramp_stop_int - ramp_start - t_rounding))
 
-	print(f"B-ramp speed was adjusted to {(Bramp_adjusted * 1e3):.5f} T/s; Ramp ends at {ramp_stop_int} ms")
+	print(f"B-ramp speed was adjusted to {(Bramp_adjusted):.5f} T/s; Ramp ends at {ramp_stop_int} s")
 	return ramp_stop_int, Bramp_adjusted
 
 def get_rigidity_ramp(
@@ -61,7 +64,7 @@ def get_rigidity_ramp(
 	Parameters
 	----------
 	t
-		Timestamps for the ramp evaluation [ms]
+		Timestamps for the ramp evaluation [s]
 	rigidity_init
 		Rigidity at the start of the ramp [Tm]
 	rigidity_final
@@ -71,9 +74,9 @@ def get_rigidity_ramp(
 	Bramp
 		Reference B ramp speed [T/ms]
 	ramp_start
-		Moment in time the ramp statrs [ms]
+		Moment in time the ramp statrs [s]
 	t_rounding
-		Rounding time at the start/end of the ramp [ms]
+		Rounding time at the start/end of the ramp [s]
 	Returns
 	-------
 	rigidity_ramp
