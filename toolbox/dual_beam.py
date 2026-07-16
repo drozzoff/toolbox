@@ -3,16 +3,22 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.constants import c as clight
 from collections.abc import Callable
+from dataclasses import dataclass
 
+
+@dataclass(frozen = True)
+class VoltageProgram:
+	timestamps: NDArray[np.floating]
+	voltage: NDArray[np.floating]
 
 def create_multispecies_lines(
-	reference_line: xt.Line | Callable,
+	reference_line: xt.Line | Callable[[], xt.Line],
 	rigidity: NDArray[np.floating],
 	timestamps: NDArray[np.floating],
 	ions: list[xt.Particles],
 	harmonics: list[int],
 	cavities: list[str],
-	voltage_ramps: list[dict],
+	voltage_ramps: list[VoltageProgram],
 ) -> list[xt.Line]:
 	"""
 	Creates 2 beamlines. The first one is set for the first ion, second one is set for the second ion.
@@ -44,6 +50,17 @@ def create_multispecies_lines(
 		Voltage ramps for the corresponding cavities
 	"""
 
+	if not (
+		len(ions)
+		== len(harmonics)
+		== len(cavities)
+		== len(voltage_ramps)
+	):
+		raise ValueError("`ions`, `harmonics`, `cavities`, and `voltage_ramps` must have the same length.")
+
+	if len(timestamps) != len(rigidity):
+		raise ValueError("`timestamps` and `rigidity` must have the same length.")
+
 	time_delta = np.diff(timestamps)
 
 	lines = []
@@ -51,9 +68,9 @@ def create_multispecies_lines(
 	# sampled at timestamps
 	lines_frf = []
 	lines_rf_phase = []
-	
+
 	for ion, h, cavity, voltage_ramp in zip(ions, harmonics, cavities, voltage_ramps):
-		line = reference_line() if isinstance(reference_line, Callable) else reference_line.copy()
+		line = reference_line() if callable(reference_line) else reference_line.copy()
 		line.particle_ref = ion
 		line.energy_program = xt.EnergyProgram(t_s = timestamps, p0c = rigidity * abs(ion.q0) * clight)
 	
@@ -66,7 +83,7 @@ def create_multispecies_lines(
 	
 		line.functions['f_rf'] = xt.FunctionPieceWiseLinear(x = timestamps, y = line_frf)
 		line.functions['rf_phase'] = xt.FunctionPieceWiseLinear(x = timestamps, y = line_rf_phase)
-		line.functions['V_rf_ref'] = xt.FunctionPieceWiseLinear(x = voltage_ramp['timestamps'], y = voltage_ramp['V'])
+		line.functions['V_rf_ref'] = xt.FunctionPieceWiseLinear(x = voltage_ramp.timestamps, y = voltage_ramp.voltage)
 		
 		line[cavity].absolute_time = False
 		line[cavity].phase = line.functions['rf_phase'](line.ref['t_turn_s'])
@@ -82,14 +99,14 @@ def create_multispecies_lines(
 		for j, (cavity, _f_rf, _phase_rf, voltage_ramp) in enumerate(zip(cavities, lines_frf, lines_rf_phase, voltage_ramps)):
 			if i == j:
 				continue
-			line.functions[f"f_rf_non_ref_{j}"] = xt.FunctionPieceWiseLinear(x = timestamps, y = _f_rf)
-			line.functions[f"rf_phase_non_ref_{j}"] = xt.FunctionPieceWiseLinear(x = timestamps, y = _phase_rf)
-			line.functions[f"V_rf_ref_non_ref_{j}"] = xt.FunctionPieceWiseLinear(x = voltage_ramp['timestamps'], y = voltage_ramp['V'])
+			line.functions[f"f_rf_non_ref_{cavity}"] = xt.FunctionPieceWiseLinear(x = timestamps, y = _f_rf)
+			line.functions[f"rf_phase_non_ref_{cavity}"] = xt.FunctionPieceWiseLinear(x = timestamps, y = _phase_rf)
+			line.functions[f"V_rf_ref_non_ref_{cavity}"] = xt.FunctionPieceWiseLinear(x = voltage_ramp.timestamps, y = voltage_ramp.voltage)
 			
 			line[cavity].absolute_time = False
-			line[cavity].phase = line.functions[f"rf_phase_non_ref_{j}"](line.ref['t_turn_s'])
-			line[cavity].frequency = line.functions[f"f_rf_non_ref_{j}"](line.ref['t_turn_s'])
-			line[cavity].voltage = line.functions[f"V_rf_ref_non_ref_{j}"](line.ref['t_turn_s'])
+			line[cavity].phase = line.functions[f"rf_phase_non_ref_{cavity}"](line.ref['t_turn_s'])
+			line[cavity].frequency = line.functions[f"f_rf_non_ref_{cavity}"](line.ref['t_turn_s'])
+			line[cavity].voltage = line.functions[f"V_rf_ref_non_ref_{cavity}"](line.ref['t_turn_s'])
 			
 			
 	return lines
