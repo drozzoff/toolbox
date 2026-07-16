@@ -38,9 +38,7 @@ def adjust_Bramp(
 	"""
 	# making the ramp_stop time to be compliable with 1 milisecond step
 
-	print(f"Initial ramp stop {ramp_start + t_rounding + (rigidity_final - rigidity_init) / (Bramp * rho)} s")
 	ramp_stop_int = ((ramp_start + t_rounding + (rigidity_final - rigidity_init) / (Bramp * rho)) // 1e-3) * 1e-3
-	print(f"Cut to {ramp_stop_int} s")
 	
 	Bramp_adjusted = (rigidity_final - rigidity_init) / (rho * (ramp_stop_int - ramp_start - t_rounding))
 
@@ -83,7 +81,8 @@ def get_rigidity_ramp(
 		An array with the rigidities evaluated at given timestamps
 	"""
 	ramp_stop, Bramp_adjusted = adjust_Bramp(rigidity_init, rigidity_final, rho, Bramp, ramp_start, t_rounding)
-
+	
+	print(rigidity_init)
 	B0 = rigidity_init / rho
 
 	# B at the end of the initial roudning
