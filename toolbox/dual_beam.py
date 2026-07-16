@@ -5,7 +5,7 @@ from scipy.constants import c as clight
 from collections.abc import Callable
 
 
-def create_two_lines(
+def create_multispecies_lines(
 	reference_line: xt.Line | Callable,
 	rigidity: NDArray[np.floating],
 	timestamps: NDArray[np.floating],
