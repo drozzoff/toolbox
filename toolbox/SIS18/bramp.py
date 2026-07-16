@@ -82,7 +82,6 @@ def get_rigidity_ramp(
 	"""
 	ramp_stop, Bramp_adjusted = adjust_Bramp(rigidity_init, rigidity_final, rho, Bramp, ramp_start, t_rounding)
 	
-	print(rigidity_init)
 	B0 = rigidity_init / rho
 
 	# B at the end of the initial roudning
