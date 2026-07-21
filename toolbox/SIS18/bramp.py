@@ -38,11 +38,12 @@ def adjust_Bramp(
 	"""
 	# making the ramp_stop time to be compliable with 1 milisecond step
 
-	ramp_stop_int = ((ramp_start + t_rounding + (rigidity_final - rigidity_init) / (Bramp * rho)) // 1e-3) * 1e-3
+	ramp_stop_int = np.floor((ramp_start + t_rounding + (rigidity_final - rigidity_init) / (Bramp * rho)) * 1e3 + 0.5) * 1e-3
 	
 	Bramp_adjusted = (rigidity_final - rigidity_init) / (rho * (ramp_stop_int - ramp_start - t_rounding))
-
+	print(f"Original ramp speed was {Bramp} and the ramp stop time {ramp_start + t_rounding + (rigidity_final - rigidity_init) / (Bramp * rho)}")
 	print(f"B-ramp speed was adjusted to {(Bramp_adjusted):.5f} T/s; Ramp ends at {ramp_stop_int} s")
+
 	return ramp_stop_int, Bramp_adjusted
 
 def get_rigidity_ramp(

@@ -103,10 +103,11 @@ def create_multispecies_lines(
 			line.functions[f"rf_phase_non_ref_{cavity}"] = xt.FunctionPieceWiseLinear(x = timestamps, y = _phase_rf)
 			line.functions[f"V_rf_ref_non_ref_{cavity}"] = xt.FunctionPieceWiseLinear(x = voltage_ramp.timestamps, y = voltage_ramp.voltage)
 			
+			line.vars[f"{cavity}_on"] = 1
 			line[cavity].absolute_time = False
 			line[cavity].phase = line.functions[f"rf_phase_non_ref_{cavity}"](line.ref['t_turn_s'])
 			line[cavity].frequency = line.functions[f"f_rf_non_ref_{cavity}"](line.ref['t_turn_s'])
-			line[cavity].voltage = line.functions[f"V_rf_ref_non_ref_{cavity}"](line.ref['t_turn_s'])
+			line[cavity].voltage = line.vars[f"{cavity}_on"] * line.functions[f"V_rf_ref_non_ref_{cavity}"](line.ref['t_turn_s'])
 			
 			
 	return lines
