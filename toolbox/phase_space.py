@@ -1,10 +1,10 @@
 from typing import List, Tuple
 import numpy as np
 from tqdm.notebook import tqdm
-from xtrack import Line, Particles, ParticlesMonitor
+import xtrack as xt
 from pandas import DataFrame
 
-def stable_particle_id(line: Line, particles: Particles, n_particles: int, **kwargs):
+def stable_particle_id(line: xt.Line, particles: xt.Particles, num_turns, **kwargs):
 	"""
 	Evaluates the `particle_id` of a particle in `particles` that is located
 	in a stable region.
@@ -12,18 +12,32 @@ def stable_particle_id(line: Line, particles: Particles, n_particles: int, **kwa
 	The function assumes `particles` are generated with a continous set of `x`.
 	
 	Unstable particles are at the beginning, stable particles at the end
+
+	Parameters
+	----------
+	line
+		A beamline
+	Particles
+		Particles objec with `x` coordinate being continous
+	num_turns
+		Number of turns for the tracking
+
+	Additional parameters
+	---------------------
+	verbose : int
+		If <= 1, function does not generate any ouput. For `verbose > 1` plots the particles' tracks
 	"""
+	n_particles = particles._num_active_particles
 	tw = line.twiss4d()
-	
-	if kwargs.get("debug", False):
+
+	verbose = kwargs.get("verbose", 0)
+
+	if verbose > 1:
 		import matplotlib.pyplot as plt
 		import seaborn as sns
 
-	line.track(
-		particles,
-		num_turns = kwargs.get("num_turns", 2000),
-		turn_by_turn_monitor = True
-	)
+	line.track(particles, num_turns = num_turns, turn_by_turn_monitor = True)
+
 	rec = line.record_last_track
 	nc = tw.get_normalized_coordinates(rec.data)
 
@@ -49,7 +63,7 @@ def stable_particle_id(line: Line, particles: Particles, n_particles: int, **kwa
 			jx_diff.append(abs(var - Jx_mean[i - 1]))
 	
 	particle_id_stable = np.argmax(jx_diff)
-	if kwargs.get("debug", False):
+	if verbose > 1:
 		sns.set_style("darkgrid")
 		fig, axes = plt.subplots()
 		for i in range(n_particles):
@@ -61,64 +75,72 @@ def stable_particle_id(line: Line, particles: Particles, n_particles: int, **kwa
 				s = 5,
 				ax = axes
 			)    
-		
 		plt.show()
 	
 	return particle_id_stable, jx_diff
 
-
-
 def get_stable_limit(
-		line: Line, 
-		ion: dict, 
-		test_range: List[float], 
-		ex_norm: float, 
-		n_particles: int, 
-		num_turns: int, 
-		precision: float = 1e-6, 
-		**kwargs
+	line: xt.Line, 
+	ex_norm: float, 
+	n_particles: int, 
+	num_turns: int,
+	*,
+	test_range: List[float] = [-3.0, 0.0], 
+	ion: xt.Particles | None = None, 
+	precision: float = 1e-6,
+	shrinkage_strength: int | str = "max",
+	**kwargs
 	):
 
 	"""
-	Find a stable region of a given line.
+	Find the normalized coordinates `x_norm` that produces stable and unstable
+	trajectories in the phase space with the given precision.
 
 	Parameters
 	----------
 	line
 		beamline to do the tracking on
-	test_range
-		initial guess for thelocation of the stable region limit. Must contain two elements both negative.
-		The number corresponds to the normalized x coordinate to a sigma. (`xt.line.build_particles()`))
 	ex_norm
 		horizontal normalized emittance
 	n_particles
 		number of particles to use for the search
 	num_turns
 		number of turns to track for the search
+	test_range
+		initial guess for the location of the stable region limit. Must contain two elements both negative.
+		The number corresponds to the normalized x coordinate to a sigma. (`xt.line.build_particles()`))
+	ion
+		A particle to use for the tracking. Default is `None` -> uses reference particle associated with a beamline.
 	precision
 		distance between the stable and unstable track. `test_range` is used to evaluate this.
-	
+	shrinkage_strength: int or str
+			Defines how the `test_range` is shrinked in iterations.
+			If `int` it leaves certain number of particles on the left and right of the identified
+			If `str` is `'max'` no extra steps are added.
+			Default is `'max'`.
+		
 	Additional parameters
 	---------------------
-	shrinkage_strength: int or str
-		Defines how the `test_range` is shrinked in iterations.
-		If `int` adds extra steps to the left and right of the stable particle.
-		If `str` is `'max'` no extra steps are added.
-		Default is `'max'`.
 	max_iterations : int
 		Limit on the number of iterations. Default is `2000`.
-	with_progress : bool
-		whether to show a progress bar or not. Default is `False`
-
+	verbose : int
+		If `verbose < 1` no output is printed.
+		If `verbose == 1` prints the progress bar (**default**)
+		If `verbose > 1` prints the progress bar and particles distribution at each iteration
+	zeta : np.array
+		`zeta` coordinate for the test beam
+	delta : np.array
+		`delta` coordinate for the test beam
 	Returns
 	-------
 	List[float]
-		First element is unstable particle, second element is stable particle.
+		First element is `x_norm` coordinate of the unstable particle. 
+		Second element is `x_norm` coordinate stable particle.
 	dict
 		Contains the data of the iterations. Keys are `jx_diff` and `x_norm`.
 	"""
-	with_progress = kwargs.get('with_progress', False)
-	
+	verbose = kwargs.get("verbose", 1)
+	with_progress = verbose > 0
 	progress = tqdm(total = 100, desc = "Tracking to find a stable region", leave = True) if with_progress else None
 	
 	get_progress = lambda x: 1 - (x - precision) / x
@@ -139,28 +161,31 @@ def get_stable_limit(
 		
 		test_beam = line.build_particles(
 			x_norm = x_test,
+			zeta = kwargs.get("zeta", 0.0),
+			delta = kwargs.get("delta", 0.0),
 			nemitt_x = ex_norm,
 			mode = "normalized_transverse",
 			method = '4d'
 		)
+		if isinstance(ion, xt.Particles):
+			test_beam2 = xt.Particles(
+				mass0 = line.particle_ref.mass0, 
+				q0 = line.particle_ref.q0,
+				gamma0 = line.particle_ref.gamma0, # we assume rigidity is the same as of the reference beam
+				mass_ratio = ion.mass0 / line.particle_ref.mass0,
+				charge_ratio = ion.q0 / line.particle_ref.q0,
+				x = test_beam.x,
+				px = test_beam.px,
+				zeta = kwargs.get("zeta", 0.0),
+				delta = kwargs.get("delta", 0.0)
+			)
+			test_beam = test_beam2
 
-		test_particles = Particles(
-			mass0 = line.particle_ref.mass0, 
-			q0 = line.particle_ref.q0,
-			gamma0 = line.particle_ref.gamma0,
-			mass_ratio = ion['mass'] / line.particle_ref.mass0,
-			charge_ratio = ion['charge'] / line.particle_ref.q0,
-			x = test_beam.x,
-			px = test_beam.px,
-			zeta = kwargs.get("zeta", 0.0),
-			delta = kwargs.get("delta", 0.0)
-		)
 		particle_id_stable, jx_diff = stable_particle_id(
 			line = line, 
-			particles = test_particles, 
-			n_particles = n_particles,
+			particles = test_beam, 
 			num_turns = num_turns,
-			debug = kwargs.get("debug", False)
+			verbose = verbose
 		)
 		iterations_data['jx_diff'].append(jx_diff)
 		
@@ -188,32 +213,76 @@ def get_stable_limit(
 	return test_range, iterations_data
 
 def get_stable_and_unstable_particle(
-		line: Line, 
-		ion: dict,
-		ex_norm: float,  
-		delta: float,
-		calculation_settings: dict,
-		**kwargs
-	) -> tuple[tuple[Particles, Particles], dict]:
+	line: xt.Line, 
+	ex_norm: float, 
+	n_particles: int, 
+	num_turns: int,
+	*,
+	test_range: List[float] = [-3.0, 0.0], 
+	ion: xt.Particles | None = None, 
+	precision: float = 1e-6,
+	shrinkage_strength: int | str = "max",
+	**kwargs
+	) -> tuple[tuple[xt.Particles, xt.Particles], dict]:
 	"""
-	
-	Additional paramters
-	--------------------
-	verbose
+	Estimates the separatrix limit around 3rd integer resonance and returns 1 particle at
+	stable trajectory, and one at the unstable trajectory.
 
+	Parameters
+	----------
+	line
+		beamline to do the tracking on
+	ex_norm
+		horizontal normalized emittance
+	n_particles
+		number of particles to use for the search
+	num_turns
+		number of turns to track for the search
+	test_range
+		initial guess for the location of the stable region limit. Must contain two elements both negative.
+		The number corresponds to the normalized x coordinate to a sigma. (`xt.line.build_particles()`))
+	ion
+		A particle to use for the tracking. Default is `None` -> uses reference particle associated with a beamline.
+	precision
+		distance between the stable and unstable track. `test_range` is used to evaluate this.
+	shrinkage_strength: int or str
+			Defines how the `test_range` is shrinked in iterations.
+			If `int` it leaves certain number of particles on the left and right of the identified
+			If `str` is `'max'` no extra steps are added.
+			Default is `'max'`.
+		
+	Additional parameters
+	---------------------
+	max_iterations : int
+		Limit on the number of iterations. Default is `2000`.
+	verbose : int
+		If `verbose < 1` no output is printed.
+		If `verbose == 1` prints the progress bar (**default**)
+		If `verbose > 1` prints the progress bar and particles distribution at each iteration
+	zeta : np.array
+		`zeta` coordinate for the test beam
+	delta : np.array
+		`delta` coordinate for the test beam
+
+	Returns
+	-------
+	List
+		First element is a stable particle. 
+		Second particle is unstable particle.
+	dict
+		Contains the data of the iterations. Keys are `jx_diff` and `x_norm`.
 	"""
-	
 	res, iteration_data = get_stable_limit(
-		line = line, 
-		ion = ion, 
-		ex_norm = ex_norm,
-		delta = delta,
-		with_progress = True if kwargs.get('verbose', 0) > 0 else False,
-		debug = True if kwargs.get('verbose', 0) > 1 else False,
-		**calculation_settings
+		line, 
+		ex_norm, 
+		n_particles,
+		num_turns,
+		test_range = test_range,
+		ion = ion,
+		precision = precision,
+		shrinkage_strength = shrinkage_strength,
+		**kwargs
 	)
-	
-	# res contains the normalized coordinates in sigma of stable and unstable particles
 
 	tmp = line.build_particles(
 		x_norm = res,
@@ -222,70 +291,116 @@ def get_stable_and_unstable_particle(
 		method = "4d"
 	)
 
-	stable_particle = Particles(
+	mass_ratio = 1.0 if ion is None else ion.mass0 / line.particle_ref.mass0
+	charge_ratio = 1.0 if ion is None else ion.q0 / line.particle_ref.q0
+
+	stable_particle = xt.Particles(
 		mass0 = line.particle_ref.mass0, 
 		q0 = line.particle_ref.q0,
 		gamma0 = line.particle_ref.gamma0,
-		mass_ratio = ion['mass'] / line.particle_ref.mass0,
-		charge_ratio = ion['charge'] / line.particle_ref.q0,
+		mass_ratio = mass_ratio,
+		charge_ratio = charge_ratio,
 		x = tmp.x[1],
 		px = tmp.px[1],
-		delta = delta
+		delta = kwargs.get('delta', 0),
+		zeta = kwargs.get('zeta', 0)
 	)
 
-	unstable_particle = Particles(
+	unstable_particle = xt.Particles(
 		mass0 = line.particle_ref.mass0,
 		q0 = line.particle_ref.q0,
 		gamma0 = line.particle_ref.gamma0,
-		mass_ratio = ion['mass'] / line.particle_ref.mass0,
-		charge_ratio = ion['charge'] / line.particle_ref.q0,
+		mass_ratio = mass_ratio,
+		charge_ratio = charge_ratio,
 		x = tmp.x[0],
 		px = tmp.px[0],
-		delta = delta
+		delta = kwargs.get('delta', 0),
+		zeta = kwargs.get('zeta', 0)
 	)
 
 	return (stable_particle, unstable_particle), iteration_data
 
 def get_separatrix_vertices(
-		line: Line, 
-		ion: dict,
-		ex_norm: float,  
-		delta: float,
-		ransac_settings: dict,
-		calculation_settings: dict,
-		**kwargs
-	):
+	line: xt.Line, 
+	ex_norm: float, 
+	n_particles: int, 
+	num_turns: int,
+	*,
+	test_range: List[float] = [-3.0, 0.0],
+	ion: xt.Particles | None = None,
+	precision: float = 1e-6,
+	shrinkage_strength: int | str = "max",
+	residual_threshold: float = 1e-4,
+	max_trials: int = 2000,
+	**kwargs
+	) -> DataFrame:
 	"""
+	Calculates 3 vertices of the separatrix around 3rd integer resonance.
+	
 	Parameters
 	----------
-	ransac_settings 
-		Parameter for RANSAC
-
+	line
+		beamline to do the tracking on
+	ex_norm
+		horizontal normalized emittance
+	n_particles
+		number of particles to use for the search
+	num_turns
+		number of turns to track for the search
+	test_range
+		initial guess for the location of the stable region limit. Must contain two elements both negative.
+		The number corresponds to the normalized x coordinate to a sigma. (`xt.line.build_particles()`))
+	ion
+		A particle to use for the tracking. Default is `None` -> uses reference particle associated with a beamline.
+	precision
+		distance between the stable and unstable track. `test_range` is used to evaluate this.
+	shrinkage_strength: int or str
+			Defines how the `test_range` is shrinked in iterations.
+			If `int` it leaves certain number of particles on the left and right of the identified
+			If `str` is `'max'` no extra steps are added.
+			Default is `'max'`.
+		
 	Additional parameters
 	---------------------
-	verbose
+	max_iterations : int
+		Limit on the number of iterations. Default is `2000`.
+	verbose : int
+		If `verbose < 1` no output is printed.
+		If `verbose == 1` prints the progress bar (**default**)
+		If `verbose > 1` prints the progress bar and particles distribution at each iteration
+	zeta : np.array
+		`zeta` coordinate for the test beam
+	delta : np.array
+		`delta` coordinate for the test beam
 
+	Returns
+	-------
+	DataFrame
+		Coordinates of 3 points in the phase space being the vertices of the stability triangle.
 	"""
 	from skimage.measure import ransac, LineModelND
 
 	verbose = kwargs.get('verbose', 0)
 
 	particles, __ = get_stable_and_unstable_particle(
-		line = line,
+		line, 
+		ex_norm, 
+		n_particles,
+		num_turns,
+		test_range = test_range,
 		ion = ion,
-		ex_norm = ex_norm,
-		delta = delta,
-		calculation_settings = calculation_settings,
-		verbose = verbose
+		precision = precision,
+		shrinkage_strength = shrinkage_strength,
+		**kwargs
 	)
 	stable_particle, unstable_particle = particles
 
 	p = stable_particle.copy()
-	line.track(p, num_turns = calculation_settings['num_turns'], turn_by_turn_monitor = True)
+	line.track(p, num_turns = num_turns, turn_by_turn_monitor = True)
 	stable_rec = line.record_last_track
 
 	p = unstable_particle.copy()
-	line.track(p, num_turns = 1000, turn_by_turn_monitor = True)
+	line.track(p, num_turns = num_turns, turn_by_turn_monitor = True)
 	unstable_rec = line.record_last_track
 
 	_zero_st = (stable_rec.x[0] == 0) & (stable_rec.px[0] == 0)
@@ -305,13 +420,17 @@ def get_separatrix_vertices(
 	p = np.c_[separatrix['x_stable'], separatrix['px_stable']]
 
 	lines_properties = []
-	# using RANSAC to find 3 lines in the phase space
-	for i in range(3):
 
-		model, inliers = ransac(p, LineModelND, min_samples = 2, **ransac_settings)
+	for i in range(3):
+		model, inliers = ransac(
+			p, 
+			LineModelND, 
+			min_samples = 2, 
+			residual_threshold = residual_threshold,
+      		max_trials = max_trials
+		)
 
 		p0, u = model.params
-		
 		u = - u / np.linalg.norm(u)
 
 		right_amp = (max(p[:, 0][inliers]) - p0[0]) / u[0]
@@ -404,7 +523,7 @@ def get_separatrix_vertices(
 
 	return DataFrame(dict(x = vertices[:, 0], px = vertices[:, 1]))
 
-def get_phase_portrait2d(monitor: ParticlesMonitor, particles: Particles, at_turn: int, plane: str = 'x') -> DataFrame:
+def get_phase_portrait2d(monitor: xt.ParticlesMonitor, particles: xt.Particles, at_turn: int, plane: str = 'x') -> DataFrame:
 	"""
 	Get the phase space portrait of the particles at a given turn from a last track monitor (`.record_last_track`).
 	If the particle was lost before `at_turn` returns the last recorded coordinate.
@@ -447,7 +566,7 @@ def get_phase_portrait2d(monitor: ParticlesMonitor, particles: Particles, at_tur
 
 	return DataFrame(res)
 
-def get_phase_portrait4d(monitor: ParticlesMonitor, particles: Particles, at_turn: int) -> DataFrame:
+def get_phase_portrait4d(monitor: xt.ParticlesMonitor, particles: xt.Particles, at_turn: int) -> DataFrame:
 	"""
 	Get the transverse phase space portrait of the particles at a given turn from a last track monitor (`.record_last_track`).
 	If the particle was lost before `at_turn` returns the last recorded coordinate.
@@ -481,7 +600,7 @@ def get_phase_portrait4d(monitor: ParticlesMonitor, particles: Particles, at_tur
 
 	return DataFrame(res)
 
-def get_phase_portrait6d(monitor: ParticlesMonitor, particles: Particles, at_turn: int) -> DataFrame:
+def get_phase_portrait6d(monitor: xt.ParticlesMonitor, particles: xt.Particles, at_turn: int) -> DataFrame:
 	"""
 	Get the transverse phase space portrait of the particles at a given turn from a last track monitor (`.record_last_track`).
 	If the particle was lost before `at_turn` returns the last recorded coordinate.
@@ -517,7 +636,7 @@ def get_phase_portrait6d(monitor: ParticlesMonitor, particles: Particles, at_tur
 
 	return DataFrame(res)
 
-def compute_simple_masks(particles: Particles):
+def compute_simple_masks(particles: xt.Particles):
 	"""
 	Compute the masks for the particles compatible for the use with the output of
 	phase portrait functions.
