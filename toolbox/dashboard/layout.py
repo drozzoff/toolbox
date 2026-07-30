@@ -83,6 +83,16 @@ def make_layout(dashboard: Dashboard):
 		if divs[key] != []:
 			tabs.append(dcc.Tab(label = key, children = divs[key]))
 
+	right_panel = html.Div(
+		className = "right-panel",
+		children = [
+			html.Div(
+					className = "card main-card",
+					children = info_divs,
+				),
+		],
+	)
+
 	layout = html.Div(
 		className = "container",
 		children = [
@@ -222,15 +232,7 @@ def make_layout(dashboard: Dashboard):
 							),
 						],
 					),
-					html.Div(
-						className = "right-panel",
-						children = [
-							html.Div(
-									className = "card main-card",
-									children = info_divs,
-								),
-						],
-					),
+					*([right_panel] if info_divs else []),
 
 				],
 			),
