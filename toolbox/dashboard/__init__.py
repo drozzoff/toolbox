@@ -1,2 +1,2 @@
-from toolbox.dashboard.extraction_dashboard import ExtractionDashboard
+from toolbox.dashboard.dashboard import Dashboard
 from toolbox.dashboard.dummy_generator import DummyGenerator

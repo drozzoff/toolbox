@@ -8,7 +8,7 @@ class SIS18_biomed_Profile:
 		pass
 
 	name = "SIS18 KO biomed"
-	def make_datafields(self, dashboard: ExtractionDashboard):
+	def make_datafields(self, dashboard: Dashboard):
 		return{
 			'intensity': DataField(
 				buffer_dependance = ['time', 'IC1', 'IC2', 'IC3'],
@@ -52,13 +52,13 @@ class SIS18_biomed_Profile:
 			),
 		}
 	
-	def make_infofields(self, dashboard: ExtractionDashboard):
+	def make_infofields(self, dashboard: Dashboard):
 		return {}
 
 	def read_file(self, filename: str) -> pd.DataFrame:
 		return pd.read_parquet(filename)
 
-	def process_file(self, dashboard: ExtractionDashboard, data: pd.DataFrame | str, **kwargs):
+	def process_file(self, dashboard: Dashboard, data: pd.DataFrame | str, **kwargs):
 		if isinstance(data, str):
 			data = self.read_file(data)
 

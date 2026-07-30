@@ -11,7 +11,7 @@ class SIS18Profile:
 		self.start_count_at_turn = start_count_at_turn
 
 	name = "SIS18 KO"
-	def make_datafields(self, dashboard: ExtractionDashboard):
+	def make_datafields(self, dashboard: Dashboard):
 		return {
 			'intensity': DataField(
 				buffer_dependance = ['turn', 'Nparticles'],
@@ -298,7 +298,7 @@ class SIS18Profile:
 			),
 		}
 
-	def make_infofields(self, dashboard: ExtractionDashboard):
+	def make_infofields(self, dashboard: Dashboard):
 		return {
 			'particles:alive': InfoField(
 				buffer_dependance = ['Nparticles'],
@@ -325,7 +325,7 @@ class SIS18Profile:
 
 	def process_file(
 			self, 
-			dashboard: ExtractionDashboard, 
+			dashboard: Dashboard, 
 			particles: xt.Particles | str, 
 			start_count_at_turn: None | int = None,
 			**kwargs
@@ -398,7 +398,7 @@ class SIS18Profile:
 		return data_mapping
 
 # DataField callbacks
-def ES_inside_losses_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def ES_inside_losses_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 
 	x = np.array(dashboard.data_buffer['extracted_at_ES:x'].recent_data)
 	px = np.array(dashboard.data_buffer['extracted_at_ES:px'].recent_data)
@@ -419,7 +419,7 @@ def ES_inside_losses_callback(dashboard: ExtractionDashboard, start_count_at_tur
 	)
 	dashboard.data_buffer['ES_septum_losses:inside'].extend(losses_at_turn, batch_id = dashboard.current_batch_id)
 
-def ES_losses_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def ES_losses_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 	if dashboard.data_buffer['ES_septum_losses:inside'].last_batch_id != dashboard.current_batch_id:
 		ES_inside_losses_callback(dashboard, start_count_at_turn)
 
@@ -428,7 +428,7 @@ def ES_losses_callback(dashboard: ExtractionDashboard, start_count_at_turn: int 
 
 	dashboard.data_buffer['ES_septum_losses'].extend(lost_inside + lost_outside, batch_id = dashboard.current_batch_id)
 
-def spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def spill_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 	x = np.array(dashboard.data_buffer['extracted_at_ES:x'].recent_data)
 	px = np.array(dashboard.data_buffer['extracted_at_ES:px'].recent_data)
 
@@ -449,7 +449,7 @@ def spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0)
 	)
 	dashboard.data_buffer['spill'].extend(losses_at_turn, batch_id = dashboard.current_batch_id)
 
-def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwargs):
+def _accumulated_quantity(dashboard: Dashboard, buffer_key: str, **kwargs):
 	"""
 	takes `buffer_key` and pushes the data to `"{buffer_key}:accumulated"`
 	"""
@@ -462,22 +462,22 @@ def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwa
 
 	dashboard.data_buffer[acc_buffer_key].extend(extension, batch_id = dashboard.current_batch_id)
 
-def accumulated_spill_callback(dashboard: ExtractionDashboard):
+def accumulated_spill_callback(dashboard: Dashboard):
 	if dashboard.data_buffer['spill'].last_batch_id != dashboard.current_batch_id:
 		spill_callback(dashboard)
 
 	_accumulated_quantity(dashboard, 'spill')
 
-def accumulated_outside_ES_losses_callback(dashboard: ExtractionDashboard):
+def accumulated_outside_ES_losses_callback(dashboard: Dashboard):
 	_accumulated_quantity(dashboard, 'lost_on_septum_wires', new_buffer_name = 'ES_septum_losses:outside:accumulated')
 
-def accumulated_inside_ES_losses_callback(dashboard: ExtractionDashboard):
+def accumulated_inside_ES_losses_callback(dashboard: Dashboard):
 	if dashboard.data_buffer['ES_septum_losses:inside'].last_batch_id != dashboard.current_batch_id:
 		ES_inside_losses_callback(dashboard)
 
 	_accumulated_quantity(dashboard, 'ES_septum_losses:inside')
 
-def accumulated_ES_losses_callback(dashboard: ExtractionDashboard):
+def accumulated_ES_losses_callback(dashboard: Dashboard):
 	if dashboard.data_buffer['ES_septum_losses:inside:accumulated'].last_batch_id != dashboard.current_batch_id:
 		accumulated_inside_ES_losses_callback(dashboard)
 
@@ -491,7 +491,7 @@ def accumulated_ES_losses_callback(dashboard: ExtractionDashboard):
 
 # InfoField callbacks
 
-def particles_info_callback(dashboard: ExtractionDashboard):
+def particles_info_callback(dashboard: Dashboard):
 	dashboard.info_dict['particles_alive'] = dashboard.data_buffer['Nparticles'].last()
 	
 	if not dashboard.info_dict['particles_total']:
@@ -499,7 +499,7 @@ def particles_info_callback(dashboard: ExtractionDashboard):
 
 	print(dashboard.info_dict)
 
-def spill_info_callback(dashboard: ExtractionDashboard):
+def spill_info_callback(dashboard: Dashboard):
 	if dashboard.data_buffer['spill:accumulated'].last_batch_id != dashboard.current_batch_id:
 		accumulated_spill_callback(dashboard)
 

@@ -18,7 +18,7 @@ class SIS18_mixed_beam_Profile:
 
 	name = "SIS18 KO mixed beam"
 	
-	def make_datafields(self, dashboard: ExtractionDashboard):
+	def make_datafields(self, dashboard: Dashboard):
 		# reading the basic 
 		res = self.base_profile.make_datafields(dashboard)
 		
@@ -211,7 +211,7 @@ class SIS18_mixed_beam_Profile:
 		)
 		return res
 
-	def make_infofields(self, dashboard: ExtractionDashboard):
+	def make_infofields(self, dashboard: Dashboard):
 		res = self.base_profile.make_infofields(dashboard)
 
 		return res
@@ -219,7 +219,7 @@ class SIS18_mixed_beam_Profile:
 	def read_file(self, filename: str) -> xt.Particles:
 		return self.base_profile.read_file(filename)
 
-	def process_file(self, dashboard: ExtractionDashboard, particles: xt.Particles | str, **kwargs) -> dict:
+	def process_file(self, dashboard: Dashboard, particles: xt.Particles | str, **kwargs) -> dict:
 		"""
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
@@ -250,7 +250,7 @@ class SIS18_mixed_beam_Profile:
 		return data_map
 	
 # callbacks
-def ion_spill_callback(dashboard: ExtractionDashboard, ion_key = 1, start_count_at_turn: int = 0):
+def ion_spill_callback(dashboard: Dashboard, ion_key = 1, start_count_at_turn: int = 0):
 	x = np.array(dashboard.data_buffer['extracted_at_ES:x'].recent_data)
 	px = np.array(dashboard.data_buffer['extracted_at_ES:px'].recent_data)
 	ion_id = np.array(dashboard.data_buffer['extracted_at_ES:ion'].recent_data)
@@ -274,14 +274,14 @@ def ion_spill_callback(dashboard: ExtractionDashboard, ion_key = 1, start_count_
 
 	dashboard.data_buffer[f'spill:ion{ion_key}'].extend(ion_losses_at_turn, batch_id = dashboard.current_batch_id)
 
-def mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def mixed_spill_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 	if dashboard.data_buffer['spill:ion1'].last_batch_id != dashboard.current_batch_id:
 		ion_spill_callback(dashboard, 1, start_count_at_turn)
 	
 	if dashboard.data_buffer['spill:ion2'].last_batch_id != dashboard.current_batch_id:
 		ion_spill_callback(dashboard, 2, start_count_at_turn)
 
-def ratio_mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def ratio_mixed_spill_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 	if dashboard.data_buffer['spill:ion1'].last_batch_id != dashboard.current_batch_id:
 		ion_spill_callback(dashboard, 1, start_count_at_turn)
 	
@@ -295,7 +295,7 @@ def ratio_mixed_spill_callback(dashboard: ExtractionDashboard, start_count_at_tu
 
 	dashboard.data_buffer['spill:mixed:ratio'].extend(ratios, batch_id = dashboard.current_batch_id)
 
-def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwargs):
+def _accumulated_quantity(dashboard: Dashboard, buffer_key: str, **kwargs):
 	"""
 	takes `buffer_key` and pushes the data to `"{buffer_key}:accumulated"`
 	"""
@@ -308,13 +308,13 @@ def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwa
 
 	dashboard.data_buffer[acc_buffer_key].extend(extension, batch_id = dashboard.current_batch_id)
 
-def ion_accumulated_spill_callback(dashboard: ExtractionDashboard, ion_key = 1, start_count_at_turn: int = 0):
+def ion_accumulated_spill_callback(dashboard: Dashboard, ion_key = 1, start_count_at_turn: int = 0):
 	if dashboard.data_buffer[f'spill:ion{ion_key}'].last_batch_id != dashboard.current_batch_id:
 		ion_spill_callback(dashboard, 1, start_count_at_turn)
 	
 	_accumulated_quantity(dashboard, f"spill:ion{ion_key}")
 
-def mixed_accumulated_spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def mixed_accumulated_spill_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 	if dashboard.data_buffer[f'spill:ion1:accumulated'].last_batch_id != dashboard.current_batch_id:
 		ion_accumulated_spill_callback(dashboard, 1, start_count_at_turn)
 
