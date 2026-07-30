@@ -3,7 +3,7 @@ import pandas as pd
 from toolbox.dashboard.profiles.datafield import DataField
 
 
-class SIS18_extraction_biomed:
+class SIS18extraction_biomed:
 	def __init__(self):
 		pass
 

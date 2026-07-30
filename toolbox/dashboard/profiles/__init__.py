@@ -1,4 +1,4 @@
 from toolbox.dashboard.profiles.datafield import DataField
 from toolbox.dashboard.profiles.sis18_extraction import SIS18extraction
 from toolbox.dashboard.profiles.sis18_extraction_mixed_beam import SIS18extraction_mixed_beam
-from toolbox.dashboard.profiles.sis18_biomed import SIS18_extraction_biomed
+from toolbox.dashboard.profiles.sis18_biomed import SIS18extraction_biomed
