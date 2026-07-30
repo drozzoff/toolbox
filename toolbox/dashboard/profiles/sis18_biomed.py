@@ -3,11 +3,11 @@ import pandas as pd
 from toolbox.dashboard.profiles.datafield import DataField
 
 
-class SIS18_biomed_Profile:
+class SIS18_extraction_biomed:
 	def __init__(self):
 		pass
 
-	name = "SIS18 KO biomed"
+	name = "SIS18 slow extraction based on 3 ICs data"
 	def make_datafields(self, dashboard: Dashboard):
 		return{
 			'intensity': DataField(

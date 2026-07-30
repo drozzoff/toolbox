@@ -12,10 +12,10 @@ def extract_keys(template: str) -> set[str]:
 		if field_name
 	}
 
-def make_layout(dashboard: ExtractionDashboard):
+def make_layout(dashboard: Dashboard):
 
 	intro_text = '''
-	### SIS18 slow extraction dashboard.
+	### Dashboard for xsuite related data.
 	'''
 	divs = {
 		'turn_dependent_data': [],
