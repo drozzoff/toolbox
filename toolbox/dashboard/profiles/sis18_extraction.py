@@ -293,7 +293,7 @@ class SIS18extraction:
 						)
 					}
 				],
-				plot_layout = ES_entrance_phase_space_layout,
+				plot_layout = partial(ES_entrance_phase_space_layout, normalized = False),
 				category = "Phase Space"
 			),
 			'ES_entrance_phase_space:sampled': DataField(
@@ -319,7 +319,33 @@ class SIS18extraction:
 						)
 					}
 				],
-				plot_layout = ES_entrance_phase_space_layout,
+				plot_layout = partial(ES_entrance_phase_space_layout, normalized = False),
+				category = "Phase Space"
+			),
+			'ES_entrance_phase_space:sampled:normalised': DataField(
+				buffer_dependance = [
+					"phase_space:histrogram",
+					"phase_space:x_edges",
+					'phase_space:px:edges'
+				],
+				plot_order = [
+					{
+						"x": "phase_space:x_edges",
+						"y": "phase_space:px_edges",
+						"z": "phase_space:histogram",
+						"settings": dict(
+							colorscale = "Viridis",
+							zsmooth = False,
+							colorbar = dict(title = "Particles"),
+							hovertemplate = (
+								"x=%{x:.4e}<br>"
+								"px=%{y:.4e}<br>"
+								"particles=%{z}<extra></extra>"
+							),
+						)
+					}
+				],
+				plot_layout = partial(ES_entrance_phase_space_layout, normalized = True),
 				category = "Phase Space"
 			)
 		}
@@ -590,55 +616,58 @@ def accumulated_ES_losses_layout(fig: go.Figure):
 		height = 700,
 	)
 
-def ES_entrance_phase_space_layout(fig: go.Figure):
-	# Anode
-	fig.add_shape(
-		type = 'line',
-		x0 = -0.055, y0 = -0.0085,
-		x1 = -0.055, y1 = -0.005,
-		line = dict(
-			color = "LightSeaGreen",
-			width = 4,
-			dash = "dashdot",
-		),
-		name = "Anode",
-		showlegend = True
-	)
+def ES_entrance_phase_space_layout(fig: go.Figure, *, normalized = False):
 
-	# Cathode
-	fig.add_shape(
-		type = 'path',
-		path = 'M -0.073 -0.0085 L -0.073 -0.005 L -0.083 -0.005 L -0.083 -0.0085 Z',
-		fillcolor = 'rgba(0, 0, 255, 0.3)',
-		line = dict(color = 'rgba(0, 0, 0, 0)'),
-		name = "Cathode",
-	)
-
-	# limits on ont being lost inside of the septum
-	px_loss_limit = np.linspace(-7.4e-3, -5.0e-3, 100).tolist()
-	x_loss_limit = list(map(lambda px: -0.055 - (px + 7.4e-3)**2 / (2 * 1.7857e-3), px_loss_limit))
-
-	path = f'M {x_loss_limit[0]},{px_loss_limit[0]} ' + ' '.join(
-		f'L {x},{y}' for x, y in zip(x_loss_limit[1:], px_loss_limit[1:])
-	)
-
-	fig.add_shape(
-		type = 'path',
-		path = path,
-		line = dict(
-			color = 'red',
-			dash = 'dash',
-			width = 2,
+	if not normalized:
+		# Anode
+		fig.add_shape(
+			type = 'line',
+			x0 = -0.055, y0 = -0.0085,
+			x1 = -0.055, y1 = -0.005,
+			line = dict(
+				color = "LightSeaGreen",
+				width = 4,
+				dash = "dashdot",
 			),
-		name = "Lost inside on the wires limit",
-		showlegend = True
-	)
+			name = "Anode",
+			showlegend = True
+		)
 
+		# Cathode
+		fig.add_shape(
+			type = 'path',
+			path = 'M -0.073 -0.0085 L -0.073 -0.005 L -0.083 -0.005 L -0.083 -0.0085 Z',
+			fillcolor = 'rgba(0, 0, 255, 0.3)',
+			line = dict(color = 'rgba(0, 0, 0, 0)'),
+			name = "Cathode",
+		)
+
+		# limits on ont being lost inside of the septum
+		px_loss_limit = np.linspace(-7.4e-3, -5.0e-3, 100).tolist()
+		x_loss_limit = list(map(lambda px: -0.055 - (px + 7.4e-3)**2 / (2 * 1.7857e-3), px_loss_limit))
+
+		path = f'M {x_loss_limit[0]},{px_loss_limit[0]} ' + ' '.join(
+			f'L {x},{y}' for x, y in zip(x_loss_limit[1:], px_loss_limit[1:])
+		)
+
+		fig.add_shape(
+			type = 'path',
+			path = path,
+			line = dict(
+				color = 'red',
+				dash = 'dash',
+				width = 2,
+				),
+			name = "Lost inside on the wires limit",
+			showlegend = True
+		)
+	title = "Normalised phase " if normalized else "Phase "
+	title += "space at ES entrance"
 	fig.update_layout(
-		title = 'Phase space at ES entrance',
-		width = 800,
+		title = title,
+		width = 700,
 		height = 700,
-		xaxis_title = 'x [m]',
-		yaxis_title = 'px [rad]',
+		xaxis_title = 'x_norm' if normalized else 'x [m]',
+		yaxis_title = 'px_norm' if normalized else 'px [rad]',
 		showlegend = True
 	)

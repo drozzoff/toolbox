@@ -295,7 +295,7 @@ class Dashboard:
 			if 'z' in trace_config:
 				# Presence of coordinate 'z' in the trace definition is assumed to be
 				# a Heatmap by default
-				z = np.asarray(kwargs.get(['z'], []))
+				z = np.asarray(kwargs.get(trace_config['y'], []))
 
 				fig.add_trace(
 					go.Heatmap(
