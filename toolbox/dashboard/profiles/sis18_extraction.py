@@ -4,7 +4,7 @@ import numpy as np
 import xtrack as xt
 import pickle as pk
 import h5py
-from toolbox.dashboard.profiles.models import DataField, InfoField
+from toolbox.dashboard.profiles.models import DataField, InfoField, FileSelection, LoadedFile
 
 
 class SIS18extraction:
@@ -368,23 +368,44 @@ class SIS18extraction:
 #			)
 		}
 
-	def read_file(self, filename: str) -> xt.Particles:
+	def read_file(self, filename: str) -> LoadedFile:
 		with open(filename, 'rb') as fid:
 			particles = xt.Particles.from_dict(pk.load(fid))
 
 		particles.sort(by = 'at_turn', interleave_lost_particles = True)
 
-		return particles
+		return LoadedFile(
+			data = particles, 
+			selections = [
+				FileSelection(
+					value = "all", 
+					label = "All data"
+				)
+			],
+			selection_name = "Dataset"
+		)
 
-	def read_phase_space_snapshots_file(self, filename: str) -> dict:
+	def read_phase_space_snapshots_file(self, filename: str) -> LoadedFile:
 		with h5py.File(filename, "r") as file:
-			return {
+			data = {
 				"turns": file["turns"][:],
 				"histograms": file["histograms"][:],
 				"x_edges": file["x_edges"][:],
 				"px_edges": file["px_edges"][:],
 				"n_alive": file["n_alive"][:],
 			}
+
+		return LoadedFile(
+			data = data,
+			selections = [
+				FileSelection(
+					value = int(turn),
+					label = f"Turn {int(turn)}"
+				)
+				for turn in data["turns"]
+			],
+			selection_name = "Turn"
+		)
 
 	def process_file(
 			self, 

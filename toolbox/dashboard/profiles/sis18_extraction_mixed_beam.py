@@ -2,7 +2,7 @@ from __future__ import annotations
 import numpy as np
 from functools import partial
 import xtrack as xt
-from toolbox.dashboard.profiles.models import DataField, Ratio
+from toolbox.dashboard.profiles.models import DataField, Ratio, LoadedFile
 from toolbox.dashboard.profiles.sis18_extraction import SIS18extraction
 
 
@@ -215,7 +215,7 @@ class SIS18extraction_mixed_beam:
 
 		return res
 
-	def read_file(self, filename: str) -> xt.Particles:
+	def read_file(self, filename: str) -> LoadedFile:
 		return self.base_profile.read_file(filename)
 
 	def process_file(self, dashboard: Dashboard, particles: xt.Particles | str, **kwargs) -> dict:

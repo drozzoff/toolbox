@@ -443,14 +443,21 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 
 		if is_file(mode):
 			dashboard.data_from_file = dashboard.profile.read_file(filepath)
+			options = [
+				{
+					"label": selection.label,
+					"value": selection.value,
+				} for selection in dashboard.data_from_file.selections
+			] 
 
-			if isinstance(dashboard.data_from_file, pd.DataFrame) and ("cycle_id" in dashboard.data_from_file.columns): 
-				unique_cycles = sorted(getattr(dashboard.data_from_file, 'cycle_id').unique())
-				options = [{"label": str(c), "value": c} for c in unique_cycles]
-				default = unique_cycles[0] if unique_cycles else None
-				return options, default, f"Loaded {len(unique_cycles)} cycles."
-			else:
-				return [0], 0, f"Loaded data."			
+			return (
+				options,
+				dashboard.data_from_file.default_selection,
+				(
+					f"Loaded {len(options)} "
+					f"{dashboard.data_from_file.selection_name.lower()} selections."
+				),
+			)		
 		else:
 			return [], None, "Unknown error"
 

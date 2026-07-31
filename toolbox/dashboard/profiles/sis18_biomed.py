@@ -1,6 +1,6 @@
 from __future__ import annotations
 import pandas as pd
-from toolbox.dashboard.profiles.models import DataField
+from toolbox.dashboard.profiles.models import DataField, LoadedFile, FileSelection
 
 
 class SIS18extraction_biomed:
@@ -55,8 +55,22 @@ class SIS18extraction_biomed:
 	def make_infofields(self, dashboard: Dashboard):
 		return {}
 
-	def read_file(self, filename: str) -> pd.DataFrame:
-		return pd.read_parquet(filename)
+	def read_file(self, filename: str) -> LoadedFile:
+		dataframe = pd.read_parquet(filename)
+
+		cycles = sorted(dataframe["cycle_id"].unique())
+
+		return LoadedFile(
+			data = dataframe,
+			selections = [
+				FileSelection(
+					value = int(cycle),
+					label = f"Cycle {cycle}"
+				)
+				for cycle in cycles
+			],
+			selection_name = "Cycle"
+		)
 
 	def process_file(
 		self, 
