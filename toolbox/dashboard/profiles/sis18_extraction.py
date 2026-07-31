@@ -299,9 +299,9 @@ class SIS18extraction:
 			),
 			'ES_entrance_phase_space:sampled': DataField(
 				buffer_dependance = [
-					"phase_space:histrogram",
+					"phase_space:histogram",
 					"phase_space:x_edges",
-					'phase_space:px:edges'
+					"phase_space:px_edges"
 				],
 				plot_order = [
 					{
@@ -486,13 +486,22 @@ class SIS18extraction:
 		self,
 		dashboard: Dashboard,
 		data: dict,
-		at_turn: int
+		selection_id: int # Its the turn number of the snapshot
 		) -> dict:
 		"""
 		Maps the `data` extracted from the h5 file with the phase space snapshots
 		according the buffers the `Dashboard` expects.
 		"""
-		pass
+		turns = np.asarray(data["turns"])
+		matches = np.flatnonzero(turns == selection_id)
+		if len(matches):
+			raise ValueError(f"No phase-space snapshot recorded at turn {selection_id}")
+
+		return {
+			"phase_space:histogram": data["histograms"][int(matches[0])],
+			"phase_space:x_edges": data['x_edges'],
+			"phase_space:px_edges": data['px_edges']
+		}
 
 # DataField callbacks
 def ES_inside_losses_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
