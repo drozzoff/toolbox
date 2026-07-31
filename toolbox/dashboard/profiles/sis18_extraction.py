@@ -408,11 +408,11 @@ class SIS18extraction:
 		)
 
 	def process_file(
-			self, 
-			dashboard: Dashboard, 
-			particles: xt.Particles | str, 
-			start_count_at_turn: None | int = None,
-			**kwargs
+		self, 
+		dashboard: Dashboard, 
+		particles: xt.Particles | str,
+		selection_id = None,
+		start_count_at_turn: None | int = None,
 		)-> dict:
 		"""
 		Maps the data needed extracted from the `xtrack.Particles` object or a file

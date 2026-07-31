@@ -60,7 +60,7 @@ def _bin_array(arr, bin_length: int, how: str) -> list:
 def is_live(mode): return mode == "live"
 def is_file(mode): return mode == "file"
 
-def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
+def register_callbacks(app: Dash, dashboard: Dashboard):
 	"""
 	CALLBACKS MAP
 	=============
@@ -467,7 +467,7 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 		Input("cycle-selector", "value"),
 		prevent_initial_call = True
 	)
-	def on_cycle_selected(mode, cycle_id):
+	def on_selection_selected(mode, selection_id):
 		"""
 		Processes the data from file in the memory for a fiven cycle
 		if such exists. 
@@ -480,28 +480,41 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 		cycle_id
 			Dashboard mode. <= Trigger
 		"""
-		if cycle_id is None:
+		if not is_file(mode) or selection_id is None:
 			return no_update
 
-		try:
-			if is_live(mode):
-				return no_update
+		loaded_file = dashboard.data_from_file
+		if loaded_file is None:
+			return no_update
+		
+		try:	
+			dashboard._clear_buffer()
 
-			elif is_file(mode):
-				dashboard._clear_buffer()
+			data_mapping = dashboard.profile.process_file(
+				dashboard, 
+				loaded_file.data, 
+				selection_id = selection_id
+			)
 
-				data_mapping = dashboard.profile.process_file(dashboard, dashboard.data_from_file, cycle_id = cycle_id)
+			with dashboard._buflock:
+				dashboard.current_batch_id = 0
+				for key, values in data_mapping.items():
+					dashboard.data_buffer[key].extend(values, batch_id = dashboard.current_batch_id)
+				
+				dashboard.run_callbacks()
 
-				with dashboard._buflock:
-					dashboard.current_batch_id = 0
-					for key in data_mapping:
-						dashboard.data_buffer[key].extend(data_mapping[key], batch_id = dashboard.current_batch_id)
-					
-					dashboard.run_callbacks()
+			print(
+				f"[INFO] Loaded "
+				f"{loaded_file.selection_name.lower()} "
+				f"selection {selection_id}"
+			)
 
-			print(f"[INFO] Loaded cycle #{cycle_id}")
+			return f"{loaded_file.selection_name}:{selection_id}"
 
 		except Exception as e:
-			print(f"[ERROR] reading cycle {cycle_id}: {e}")
+			print(
+				f"[ERROR] Could not load selection "
+				f"{selection_id}: {e}"
+			)
 			traceback.print_exc()
 			return no_update

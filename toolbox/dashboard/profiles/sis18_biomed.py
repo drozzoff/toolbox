@@ -76,13 +76,13 @@ class SIS18extraction_biomed:
 		self, 
 		dashboard: Dashboard, 
 		data: pd.DataFrame | str, 
-		cycle_id: int = 0
+		selection_id: int = 0 # Its the Cycle id in the dataframe
 		):
 		if isinstance(data, str):
 			data = self.read_file(data)
 
-		single_cycle = data[data['cycle_id'] == cycle_id]
-		print(single_cycle)
+		single_cycle = data[data['cycle_id'] == selection_id]
+#		print(single_cycle)
 
 		data_mapping = {}
 		for key in dashboard.data_to_expect:
@@ -107,6 +107,6 @@ def biomed_data_layout(fig: go.Figure):
 		title = 'Spill, biomed data',
 		xaxis_title = 'time',
 		yaxis_title = 'Spill',
-		width = 2250,
-		height = 900,
+		width = 1500,
+		height = 800,
 	)

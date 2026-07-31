@@ -218,7 +218,12 @@ class SIS18extraction_mixed_beam:
 	def read_file(self, filename: str) -> LoadedFile:
 		return self.base_profile.read_file(filename)
 
-	def process_file(self, dashboard: Dashboard, particles: xt.Particles | str, **kwargs) -> dict:
+	def process_file(
+		self, 
+		dashboard: Dashboard, 
+		particles: xt.Particles | str, 
+		selection_id = None,
+		) -> dict:
 		"""
 		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
 		"""
