@@ -9,7 +9,7 @@ import numbers
 import pandas as pd
 import datetime
 from string import Formatter
-from toolbox.dashboard.profiles.datafield import Ratio
+from toolbox.dashboard.profiles.models import Ratio
 
 
 def _bin_array(arr, bin_length: int, how: str) -> list:
