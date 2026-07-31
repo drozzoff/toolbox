@@ -4,7 +4,7 @@ import numpy as np
 import xtrack as xt
 import pickle as pk
 import h5py
-from toolbox.dashboard.profiles.datafield import DataField, InfoField
+from toolbox.dashboard.profiles.models import DataField, InfoField
 
 
 class SIS18extraction:

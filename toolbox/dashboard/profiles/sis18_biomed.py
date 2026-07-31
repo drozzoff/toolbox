@@ -1,6 +1,6 @@
 from __future__ import annotations
 import pandas as pd
-from toolbox.dashboard.profiles.datafield import DataField
+from toolbox.dashboard.profiles.models import DataField
 
 
 class SIS18extraction_biomed:
@@ -58,11 +58,15 @@ class SIS18extraction_biomed:
 	def read_file(self, filename: str) -> pd.DataFrame:
 		return pd.read_parquet(filename)
 
-	def process_file(self, dashboard: Dashboard, data: pd.DataFrame | str, **kwargs):
+	def process_file(
+		self, 
+		dashboard: Dashboard, 
+		data: pd.DataFrame | str, 
+		cycle_id: int = 0
+		):
 		if isinstance(data, str):
 			data = self.read_file(data)
 
-		cycle_id = kwargs.get("cycle_id", 0)
 		single_cycle = data[data['cycle_id'] == cycle_id]
 		print(single_cycle)
 
