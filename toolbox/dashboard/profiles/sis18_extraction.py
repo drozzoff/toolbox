@@ -3,6 +3,7 @@ from functools import partial
 import numpy as np
 import xtrack as xt
 import pickle as pk
+import h5py
 from toolbox.dashboard.profiles.datafield import DataField, InfoField
 
 
@@ -375,6 +376,16 @@ class SIS18extraction:
 
 		return particles
 
+	def read_phase_space_snapshots_file(self, filename: str) -> dict:
+		with h5py.File(filename, "r") as file:
+			return {
+				"turns": file["turns"][:],
+				"histograms": file["histograms"][:],
+				"x_edges": file["x_edges"][:],
+				"px_edges": file["px_edges"][:],
+				"n_alive": file["n_alive"][:],
+			}
+
 	def process_file(
 			self, 
 			dashboard: Dashboard, 
@@ -383,7 +394,8 @@ class SIS18extraction:
 			**kwargs
 		)-> dict:
 		"""
-		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
+		Maps the data needed extracted from the `xtrack.Particles` object or a file
+		according the buffers the `Dashboard` expects.
 		"""
 		if start_count_at_turn is None:
 			start_count_at_turn = self.start_count_at_turn
@@ -448,6 +460,18 @@ class SIS18extraction:
 				data_mapping[key] = number_lost_particles_at_septum_end
 		
 		return data_mapping
+
+	def process_phase_space_snapshots_file(
+		self,
+		dashboard: Dashboard,
+		data: dict,
+		at_turn: int
+		) -> dict:
+		"""
+		Maps the `data` extracted from the h5 file with the phase space snapshots
+		according the buffers the `Dashboard` expects.
+		"""
+		pass
 
 # DataField callbacks
 def ES_inside_losses_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
