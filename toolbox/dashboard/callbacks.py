@@ -354,7 +354,7 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 		State({"type":"stream-graph", "key": MATCH}, "id"),
 		prevent_initial_call = True,
 	)
-	def render_full_figure(cycle_loaded,  bin_length: int, mode: str,graph_id):
+	def render_full_figure(cycle_loaded,  bin_length: int, mode: str, graph_id):
 		"""
 		Build the whole figure when reading from file. Is alternative to `stream_data`
 		when the data is read from a file

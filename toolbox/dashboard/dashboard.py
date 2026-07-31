@@ -288,9 +288,25 @@ class Dashboard:
 		fig = go.Figure()
 		figure_config = self.data_fields[key].plot_order
 		
-		for i, tmp in enumerate(figure_config):
-			x = kwargs.get(tmp['x'], [])
-			y = kwargs.get(tmp['y'], [])
+		for i, trace_config in enumerate(figure_config):
+			x = kwargs.get(trace_config['x'], [])
+			y = kwargs.get(trace_config['y'], [])
+
+			if 'z' in trace_config:
+				# Presence of coordinate 'z' in the trace definition is assumed to be
+				# a Heatmap by default
+				z = np.asarray(kwargs.get(['z'], []))
+
+				fig.add_trace(
+					go.Heatmap(
+						x = x,
+						y = y,
+						z = z.T,
+						**trace_config["settings"]
+					)
+				)
+
+				continue
 
 			if len(x) != len(y):
 				print(f"[ERROR] length missmatch between x and y for '{key}' trace id = {i}")
@@ -299,7 +315,7 @@ class Dashboard:
 			fig.add_trace(go.Scatter(
 				x = x,
 				y = y,
-				**tmp['settings']
+				**trace_config['settings']
 			))
 
 		self.data_fields[key].plot_layout(fig)

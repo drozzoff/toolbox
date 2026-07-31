@@ -296,8 +296,31 @@ class SIS18extraction:
 				plot_layout = ES_entrance_phase_space_layout,
 				category = "Phase Space"
 			),
-			'ES_entrance_phase_space_downscalled': DataField(
-				
+			'ES_entrance_phase_space:sampled': DataField(
+				buffer_dependance = [
+					"phase_space:histrogram",
+					"phase_space:x_edges",
+					'phase_space:px:edges'
+				],
+				plot_order = [
+					{
+						"x": "phase_space:x_edges",
+						"y": "phase_space:px_edges",
+						"z": "phase_space:histogram",
+						"settings": dict(
+							colorscale = "Viridis",
+							zsmooth = False,
+							colorbar = dict(title = "Particles"),
+							hovertemplate = (
+								"x=%{x:.4e}<br>"
+								"px=%{y:.4e}<br>"
+								"particles=%{z}<extra></extra>"
+							),
+						)
+					}
+				],
+				plot_layout = ES_entrance_phase_space_layout,
+				category = "Phase Space"
 			)
 		}
 
