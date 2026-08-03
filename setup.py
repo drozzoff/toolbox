@@ -11,7 +11,11 @@ DEPENDENCIES = [
 	'scikit-learn',
 	'seaborn',
 	'flask-compress',
-	'h5py'
+	'h5py',
+	'ipython',
+	'ipywidgets',
+	'scipy',
+	'tqdm',
 ]
 
 setup(
