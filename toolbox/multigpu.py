@@ -4,6 +4,7 @@ over multiple GPUs that are available to the user.
 """
 
 import warnings
+from collections.abc import Callable
 import multiprocessing as mp
 import tempfile
 import numpy as np
@@ -12,6 +13,8 @@ import xobjects as xo
 import xtrack as xt
 import time
 import os
+import h5py
+from toolbox.phase_space.extra import PhaseSpaceSampler
 
 
 def split_indices(n_elements: int, n_chuncks: int):
@@ -22,19 +25,20 @@ def split_indices(n_elements: int, n_chuncks: int):
 	idx = np.cumsum([0] + sizes)
 	return [(idx[i], idx[i+1]) for i in range(n_chuncks)]
 
-def log_worker(t0, device, msg, *, verbose = True):
-	if not verbose:
+def log_worker(t0, device, msg, *, verbose: int = 2):
+	if verbose < 2:
 		return
 
 	now = time.time() - t0
 	print(f"[device = {device}] {now:.6f} s: {msg}", flush = True)
 
 def worker(
-	build_line: callable,
+	build_line: Callable[[], xt.Line],
 	device: str,
 	num_turns: int,
 	folder: str,
-	verbose: bool = False
+	verbose: int = 0,
+	build_sampler: Callable[[], object] | None = None,
 	):
 	"""
 	Parameters
@@ -48,10 +52,25 @@ def worker(
 	folder
 		Name of the folder to read/write the particles' data
 	verbose
-		If `True` (dafault `False`) prints
+		If `varbose > 1` prints the output from the worker
+	build_sampler
 	"""
 	t0 = time.time()
 
+	default_track_kwargs = {
+		"time": True,
+		"turn_by_turn_monitor": False,
+		"with_progress": verbose > 1
+	}
+
+	# Special case to store the pixelised phase space image
+	phase_space_sampler = None
+	if build_sampler is not None:
+		phase_space_sampler = build_sampler()
+		default_track_kwargs["log"] = phase_space_sampler
+
+	log_worker(t0, device, "Created tracking configureation", verbose = verbose)
+	
 	current_context =  xo.ContextPyopencl(device)
 	log_worker(t0, device, "Created context", verbose = verbose)
 	
@@ -71,9 +90,7 @@ def worker(
 	line_to_track.track(
 		particles = beam_chunk, 
 		num_turns = num_turns,
-		time = True,
-		turn_by_turn_monitor = False,
-		with_progress = verbose,
+		**default_track_kwargs
 	)
 
 	log_worker(t0, device, f"Finished tracking | Track time = {line_to_track.time_last_track}", verbose = verbose)
@@ -83,8 +100,14 @@ def worker(
 	
 	log_worker(t0, device, "Saved the chunk of the beam", verbose = verbose)
 
-def log_main(t0, msg, *, verbose = True):
-	if not verbose:
+	if phase_space_sampler is not None:
+		# special case -> saving the phase space snapshots to the memory
+		phase_space_sampler.save_data(os.path.join(folder, f"phase_space_chunk_{device}.h5"))
+
+	log_worker(t0, device, "Saved the chunk of phase space snapshots", verbose = verbose)
+
+def log_main(t0, msg, *, verbose: int = 1):
+	if verbose < 1:
 		return
 
 	now = time.time() - t0
@@ -93,12 +116,12 @@ def log_main(t0, msg, *, verbose = True):
 def track_multigpu(
 	particles: xt.Particles | str,
 	*, 
-	line_constructor: callable, 
+	line_constructor: Callable[[], xt.Line], 
 	num_turns: int, 
 	num_gpus: int,
+	phase_space_sampler: Callable[[], PhaseSpaceSampler] | None = None,
 	verbose: int = 1,
-	**kwargs
-	):
+	) -> xt.Particles | tuple[xt.Particles, PhaseSpaceSampler]:
 	"""
 	Runs tracking on GSI HPC with multiple GPUs.
 
@@ -123,11 +146,16 @@ def track_multigpu(
 		`0` - no output
 		`1` - output from main process
 		`2` - output from main and workers' processes
-
+	phase_space_sampler
+		A constructor for `PhaseSpaceSampler` object for the phase space evolution recording.
 	Returns
 	-------
-	xt.Particles
-		A new object `xt.Particles` with the data at the end of the tracking.
+	xt.Particles or tuple[xt.Particles, PhaseSpaceSampler]
+		If `phase_space_sampler` is `None`, returns the tracked particles.
+
+		If a phase-space sampler constructor is provided, returns a tuple containing:
+		- The tracked particles.
+		- The merged phase-space sampler containing snapshots from all workers.
 	"""
 	t0 = time.time()
 
@@ -141,7 +169,6 @@ def track_multigpu(
 		num_gpus = num_gpus_available
 
 	devices = devices[:num_gpus]
-	verbose_worker = verbose > 1
 	
 	tmp_folder = tempfile.TemporaryDirectory()
 	temp_folder = tmp_folder.name
@@ -168,7 +195,15 @@ def track_multigpu(
 	for device, (i0, i1) in zip(devices, ranges):
 		p = mp.Process(
 			target = worker,
-			args = (line_constructor, device, num_turns, temp_folder, verbose_worker),
+			args = (
+				line_constructor, 
+				device, 
+				num_turns, 
+				temp_folder, 
+				verbose, 
+				phase_space_sampler
+			),
+
 		)
 		procs.append(p)
 
@@ -184,17 +219,44 @@ def track_multigpu(
 	
 	log_main(t0, f"Processes joined", verbose = verbose)
 
+	failed = [
+		process.exitcode
+		for process in procs
+		if process.exitcode != 0
+	]
+
+	if failed:
+		raise RuntimeError(f"Worker processes failed: {failed}")
+
 	tracked_beam = None
 	for device in devices:
 		with open(os.path.join(temp_folder, f"out_beam_chunk_{device}.pkl"), 'rb') as fid:
 			beam_chunk = xt.Particles.from_dict(pk.load(fid))
 
-		if tracked_beam:
+		if tracked_beam is not None:
 			tracked_beam = xt.Particles.merge([tracked_beam, beam_chunk])
 		else:
 			tracked_beam = beam_chunk
 	
-	log_main(t0, f"Processed results", verbose = verbose)
+	log_main(t0, f"Processed particles data", verbose = verbose)
+
+	merged_sampler = None
+	if phase_space_sampler is not None:
+		merged_sampler = phase_space_sampler()
+
+		with h5py.File(os.path.join(temp_folder, f"phase_space_chunk_{devices[0]}.h5"), "r") as file:
+			merged_sampler.histograms = file["histograms"][:].astype(np.uint32)
+			merged_sampler.turns = file["turns"][:]
+
+		for device in devices[1:]:
+			with h5py.File(os.path.join(temp_folder, f"phase_space_chunk_{device}.h5"), "r") as file:
+				merged_sampler.histograms += file["histograms"][:]
+
+		log_main(t0, f"Merged phase space images", verbose = verbose)
+
+		log_main(t0, f"Finished", verbose = verbose)
+
+		return tracked_beam, merged_sampler
 	
 	log_main(t0, f"Finished", verbose = verbose)
 
