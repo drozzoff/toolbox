@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional, Any
+from collections.abc import Callable
 
 @dataclass
 class DataField:
@@ -54,6 +55,7 @@ class LoadedFile:
 	data: Any
 	selections: list[FileSelection]
 	selection_name: str = "Selection"
+	processor: Callable[..., dict] | None = None
 
 	@property
 	def default_selection(self):

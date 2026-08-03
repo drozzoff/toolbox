@@ -325,9 +325,9 @@ class SIS18extraction:
 			),
 			'ES_entrance_phase_space:sampled:normalised': DataField(
 				buffer_dependance = [
-					"phase_space:histrogram",
+					"phase_space:histogram",
 					"phase_space:x_edges",
-					'phase_space:px:edges'
+					'phase_space:px_edges'
 				],
 				plot_order = [
 					{
@@ -369,6 +369,12 @@ class SIS18extraction:
 		}
 
 	def read_file(self, filename: str) -> LoadedFile:
+		if h5py.is_hdf5(filename):
+			return self.read_phase_space_snapshots_file(filename)
+
+		return self.read_particles_file(filename)
+
+	def read_particles_file(self, filename: str) -> LoadedFile:
 		with open(filename, 'rb') as fid:
 			particles = xt.Particles.from_dict(pk.load(fid))
 
@@ -394,6 +400,8 @@ class SIS18extraction:
 				"px_edges": file["px_edges"][:],
 				"n_alive": file["n_alive"][:],
 			}
+		print("Data read from the file")
+		print(data)
 
 		return LoadedFile(
 			data = data,
@@ -404,7 +412,8 @@ class SIS18extraction:
 				)
 				for turn in data["turns"]
 			],
-			selection_name = "Turn"
+			selection_name = "Turn",
+			processor = self.process_phase_space_snapshots_file,
 		)
 
 	def process_file(
@@ -494,7 +503,7 @@ class SIS18extraction:
 		"""
 		turns = np.asarray(data["turns"])
 		matches = np.flatnonzero(turns == selection_id)
-		if len(matches):
+		if len(matches) == 0:
 			raise ValueError(f"No phase-space snapshot recorded at turn {selection_id}")
 
 		return {

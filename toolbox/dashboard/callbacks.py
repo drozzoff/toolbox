@@ -378,9 +378,18 @@ def register_callbacks(app: Dash, dashboard: Dashboard):
 
 		buff = {}
 		with dashboard._buflock:
-			for i, tmp in enumerate(df.plot_order):
-				raw_x = dashboard.data_buffer[tmp["x"]].data
-				raw_y = dashboard.data_buffer[tmp["y"]].data
+			for i, trace_config in enumerate(df.plot_order):
+				raw_x = dashboard.data_buffer[trace_config["x"]].data
+				raw_y = dashboard.data_buffer[trace_config["y"]].data
+
+				if "z" in trace_config:
+					# Separate case when we building a heatmap
+
+					buff[trace_config['x']] = raw_x
+					buff[trace_config['y']] = raw_y
+					buff[trace_config['z']] = dashboard.data_buffer[trace_config["z"]].data
+
+					continue
 
 				do_bin = bin_info and bin_info.get("enabled") and (bin_length and bin_length > 1)
 				if do_bin:
@@ -393,10 +402,10 @@ def register_callbacks(app: Dash, dashboard: Dashboard):
 					except TypeError:
 						y = [v.value() for v in raw_y]
 
-				if tmp['x'] not in buff:
-					buff[tmp['x']] = x
-				if tmp['y'] not in buff:
-					buff[tmp['y']] = y
+				if trace_config['x'] not in buff:
+					buff[trace_config['x']] = x
+				if trace_config['y'] not in buff:
+					buff[trace_config['y']] = y
 		
 		return dashboard.plot_figure(data_key, **buff)
 
@@ -490,7 +499,9 @@ def register_callbacks(app: Dash, dashboard: Dashboard):
 		try:	
 			dashboard._clear_buffer()
 
-			data_mapping = dashboard.profile.process_file(
+			processor = loaded_file.processor or dashboard.profile.process_file
+
+			data_mapping = processor(
 				dashboard, 
 				loaded_file.data, 
 				selection_id = selection_id
@@ -503,18 +514,11 @@ def register_callbacks(app: Dash, dashboard: Dashboard):
 				
 				dashboard.run_callbacks()
 
-			print(
-				f"[INFO] Loaded "
-				f"{loaded_file.selection_name.lower()} "
-				f"selection {selection_id}"
-			)
+			print(f"[INFO] Loaded {loaded_file.selection_name.lower()} selection {selection_id}")
 
 			return f"{loaded_file.selection_name}:{selection_id}"
 
 		except Exception as e:
-			print(
-				f"[ERROR] Could not load selection "
-				f"{selection_id}: {e}"
-			)
+			print(f"[ERROR] Could not load selection {selection_id}: {e}")
 			traceback.print_exc()
 			return no_update
