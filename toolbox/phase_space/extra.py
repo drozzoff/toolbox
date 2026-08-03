@@ -1,6 +1,7 @@
 import numpy as np
 import xtrack as xt
 from pandas import DataFrame
+import h5py
 
 
 class PhaseSpaceSampler:
@@ -9,14 +10,12 @@ class PhaseSpaceSampler:
 	It is not practically possible to keep the phase space information for any turn when number of particles
 	used and number of turns are large. 
 	**E.g.** Tracking on GPU of 250k particles for 1kk turns means to store
-	**8 bytes x 2.5e4 x 1e6 ~ 2.0TB** of data in RAM. No computer would be able to do that.
-	
+	**8 bytes x 2.5e4 x 1e6 ~ 2.0TB** of data in RAM.
 
 	But phase space scalled down to a resolution of 100x100 in selected window and recorded every 1k turns means
 	we only need **4 bytes  1000 x 100 x 100 ~ 40 MB** in `np.uint32` format.
 
 	The way is to use it as a callback during the tracking.
-
 	"""
 	def __init__(self, 
 		xlim: list,
@@ -102,3 +101,34 @@ class PhaseSpaceSampler:
 		self.n_alive.append(alive_particles)
 
 		return alive_particles
+
+	def save_data(self, filename: str = "phase_space_snapshots.h5"):
+		"""
+		Save the data in HDF5 format in the following structure
+		phase_space_snapshots.h5
+		├── histograms		shape: (n_snapshots, n_x_bins, n_px_bins), dtype uint32
+		├── turns			shape: (n_snapshots,), dtype int64
+		├── n_alive			shape: (n_snapshots,), dtype uint32
+		├── x_edges			shape: (n_x_bins + 1,)
+		├── px_edges		shape: (n_px_bins + 1,)
+		└── attrs
+			├── every
+			├── in_normalised_coordinates
+			└── nemitt_x
+		"""
+		with h5py.File(filename, "w") as f:
+			f.create_dataset(
+				"histograms",
+				data = np.asarray(self.histograms, dtype = np.uint32),
+				compression = "gzip",
+				shuffle = True
+			)
+			f.create_dataset("turns", data = np.asarray(self.turns, dtype = np.int64))
+			f.create_dataset("n_alive", data = np.asarray(self.n_alive, dtype = np.uint32))
+			f.create_dataset("x_edges", data = self.x_edges)
+			f.create_dataset("px_edges", data = self.px_edges)
+
+			f.attrs["every"] = self.every
+			f.attrs["in_normalized_coordinates"] = self.in_normalised_coordinates
+			if self.nemitt_x is not None:
+				f.attrs["nemitt_x"] = self.nemitt_x

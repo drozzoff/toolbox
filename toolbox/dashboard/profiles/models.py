@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Any
+from collections.abc import Callable
 
 @dataclass
 class DataField:
@@ -43,3 +44,22 @@ class Ratio:
 	
 	def __str__(self):
 		return f"{self.num}/{self.den}"
+
+@dataclass
+class FileSelection:
+	value: str | int | float
+	label: str
+
+@dataclass
+class LoadedFile:
+	data: Any
+	selections: list[FileSelection]
+	selection_name: str = "Selection"
+	processor: Callable[..., dict] | None = None
+
+	@property
+	def default_selection(self):
+		if not self.selections:
+			return None
+
+		return self.selections[0].value

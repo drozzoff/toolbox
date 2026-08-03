@@ -12,10 +12,10 @@ def extract_keys(template: str) -> set[str]:
 		if field_name
 	}
 
-def make_layout(dashboard: ExtractionDashboard):
+def make_layout(dashboard: Dashboard):
 
 	intro_text = '''
-	### SIS18 slow extraction dashboard.
+	### Dashboard for xsuite related data.
 	'''
 	divs = {
 		'turn_dependent_data': [],
@@ -82,6 +82,16 @@ def make_layout(dashboard: ExtractionDashboard):
 	for key in divs:
 		if divs[key] != []:
 			tabs.append(dcc.Tab(label = key, children = divs[key]))
+
+	right_panel = html.Div(
+		className = "right-panel",
+		children = [
+			html.Div(
+					className = "card main-card",
+					children = info_divs,
+				),
+		],
+	)
 
 	layout = html.Div(
 		className = "container",
@@ -222,15 +232,7 @@ def make_layout(dashboard: ExtractionDashboard):
 							),
 						],
 					),
-					html.Div(
-						className = "right-panel",
-						children = [
-							html.Div(
-									className = "card main-card",
-									children = info_divs,
-								),
-						],
-					),
+					*([right_panel] if info_divs else []),
 
 				],
 			),

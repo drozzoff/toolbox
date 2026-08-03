@@ -1,14 +1,14 @@
 from __future__ import annotations
 import pandas as pd
-from toolbox.dashboard.profiles.datafield import DataField
+from toolbox.dashboard.profiles.models import DataField, LoadedFile, FileSelection
 
 
-class SIS18_biomed_Profile:
+class SIS18extraction_biomed:
 	def __init__(self):
 		pass
 
-	name = "SIS18 KO biomed"
-	def make_datafields(self, dashboard: ExtractionDashboard):
+	name = "SIS18 slow extraction based on 3 ICs data"
+	def make_datafields(self, dashboard: Dashboard):
 		return{
 			'intensity': DataField(
 				buffer_dependance = ['time', 'IC1', 'IC2', 'IC3'],
@@ -52,19 +52,37 @@ class SIS18_biomed_Profile:
 			),
 		}
 	
-	def make_infofields(self, dashboard: ExtractionDashboard):
+	def make_infofields(self, dashboard: Dashboard):
 		return {}
 
-	def read_file(self, filename: str) -> pd.DataFrame:
-		return pd.read_parquet(filename)
+	def read_file(self, filename: str) -> LoadedFile:
+		dataframe = pd.read_parquet(filename)
 
-	def process_file(self, dashboard: ExtractionDashboard, data: pd.DataFrame | str, **kwargs):
+		cycles = sorted(dataframe["cycle_id"].unique())
+
+		return LoadedFile(
+			data = dataframe,
+			selections = [
+				FileSelection(
+					value = int(cycle),
+					label = f"Cycle {cycle}"
+				)
+				for cycle in cycles
+			],
+			selection_name = "Cycle"
+		)
+
+	def process_file(
+		self, 
+		dashboard: Dashboard, 
+		data: pd.DataFrame | str, 
+		selection_id: int = 0 # Its the Cycle id in the dataframe
+		):
 		if isinstance(data, str):
 			data = self.read_file(data)
 
-		cycle_id = kwargs.get("cycle_id", 0)
-		single_cycle = data[data['cycle_id'] == cycle_id]
-		print(single_cycle)
+		single_cycle = data[data['cycle_id'] == selection_id]
+#		print(single_cycle)
 
 		data_mapping = {}
 		for key in dashboard.data_to_expect:
@@ -89,6 +107,6 @@ def biomed_data_layout(fig: go.Figure):
 		title = 'Spill, biomed data',
 		xaxis_title = 'time',
 		yaxis_title = 'Spill',
-		width = 2250,
-		height = 900,
+		width = 1500,
+		height = 800,
 	)

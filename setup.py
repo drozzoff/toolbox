@@ -10,7 +10,8 @@ DEPENDENCIES = [
 	'dash',
 	'scikit-learn',
 	'seaborn',
-	'flask-compress'
+	'flask-compress',
+	'h5py'
 ]
 
 setup(

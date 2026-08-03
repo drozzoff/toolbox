@@ -9,7 +9,7 @@ import numbers
 import pandas as pd
 import datetime
 from string import Formatter
-from toolbox.dashboard.profiles.datafield import Ratio
+from toolbox.dashboard.profiles.models import Ratio
 
 
 def _bin_array(arr, bin_length: int, how: str) -> list:
@@ -60,7 +60,7 @@ def _bin_array(arr, bin_length: int, how: str) -> list:
 def is_live(mode): return mode == "live"
 def is_file(mode): return mode == "file"
 
-def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
+def register_callbacks(app: Dash, dashboard: Dashboard):
 	"""
 	CALLBACKS MAP
 	=============
@@ -354,7 +354,7 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 		State({"type":"stream-graph", "key": MATCH}, "id"),
 		prevent_initial_call = True,
 	)
-	def render_full_figure(cycle_loaded,  bin_length: int, mode: str,graph_id):
+	def render_full_figure(cycle_loaded,  bin_length: int, mode: str, graph_id):
 		"""
 		Build the whole figure when reading from file. Is alternative to `stream_data`
 		when the data is read from a file
@@ -378,9 +378,18 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 
 		buff = {}
 		with dashboard._buflock:
-			for i, tmp in enumerate(df.plot_order):
-				raw_x = dashboard.data_buffer[tmp["x"]].data
-				raw_y = dashboard.data_buffer[tmp["y"]].data
+			for i, trace_config in enumerate(df.plot_order):
+				raw_x = dashboard.data_buffer[trace_config["x"]].data
+				raw_y = dashboard.data_buffer[trace_config["y"]].data
+
+				if "z" in trace_config:
+					# Separate case when we building a heatmap
+
+					buff[trace_config['x']] = raw_x
+					buff[trace_config['y']] = raw_y
+					buff[trace_config['z']] = dashboard.data_buffer[trace_config["z"]].data
+
+					continue
 
 				do_bin = bin_info and bin_info.get("enabled") and (bin_length and bin_length > 1)
 				if do_bin:
@@ -393,10 +402,10 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 					except TypeError:
 						y = [v.value() for v in raw_y]
 
-				if tmp['x'] not in buff:
-					buff[tmp['x']] = x
-				if tmp['y'] not in buff:
-					buff[tmp['y']] = y
+				if trace_config['x'] not in buff:
+					buff[trace_config['x']] = x
+				if trace_config['y'] not in buff:
+					buff[trace_config['y']] = y
 		
 		return dashboard.plot_figure(data_key, **buff)
 
@@ -443,14 +452,21 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 
 		if is_file(mode):
 			dashboard.data_from_file = dashboard.profile.read_file(filepath)
+			options = [
+				{
+					"label": selection.label,
+					"value": selection.value,
+				} for selection in dashboard.data_from_file.selections
+			] 
 
-			if isinstance(dashboard.data_from_file, pd.DataFrame) and ("cycle_id" in dashboard.data_from_file.columns): 
-				unique_cycles = sorted(getattr(dashboard.data_from_file, 'cycle_id').unique())
-				options = [{"label": str(c), "value": c} for c in unique_cycles]
-				default = unique_cycles[0] if unique_cycles else None
-				return options, default, f"Loaded {len(unique_cycles)} cycles."
-			else:
-				return [0], 0, f"Loaded data."			
+			return (
+				options,
+				dashboard.data_from_file.default_selection,
+				(
+					f"Loaded {len(options)} "
+					f"{dashboard.data_from_file.selection_name.lower()} selections."
+				),
+			)		
 		else:
 			return [], None, "Unknown error"
 
@@ -460,7 +476,7 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 		Input("cycle-selector", "value"),
 		prevent_initial_call = True
 	)
-	def on_cycle_selected(mode, cycle_id):
+	def on_selection_selected(mode, selection_id):
 		"""
 		Processes the data from file in the memory for a fiven cycle
 		if such exists. 
@@ -473,28 +489,36 @@ def register_callbacks(app: Dash, dashboard: ExtractionDashboard):
 		cycle_id
 			Dashboard mode. <= Trigger
 		"""
-		if cycle_id is None:
+		if not is_file(mode) or selection_id is None:
 			return no_update
 
-		try:
-			if is_live(mode):
-				return no_update
+		loaded_file = dashboard.data_from_file
+		if loaded_file is None:
+			return no_update
+		
+		try:	
+			dashboard._clear_buffer()
 
-			elif is_file(mode):
-				dashboard._clear_buffer()
+			processor = loaded_file.processor or dashboard.profile.process_file
 
-				data_mapping = dashboard.profile.process_file(dashboard, dashboard.data_from_file, cycle_id = cycle_id)
+			data_mapping = processor(
+				dashboard, 
+				loaded_file.data, 
+				selection_id = selection_id
+			)
 
-				with dashboard._buflock:
-					dashboard.current_batch_id = 0
-					for key in data_mapping:
-						dashboard.data_buffer[key].extend(data_mapping[key], batch_id = dashboard.current_batch_id)
-					
-					dashboard.run_callbacks()
+			with dashboard._buflock:
+				dashboard.current_batch_id = 0
+				for key, values in data_mapping.items():
+					dashboard.data_buffer[key].extend(values, batch_id = dashboard.current_batch_id)
+				
+				dashboard.run_callbacks()
 
-			print(f"[INFO] Loaded cycle #{cycle_id}")
+			print(f"[INFO] Loaded {loaded_file.selection_name.lower()} selection {selection_id}")
+
+			return f"{loaded_file.selection_name}:{selection_id}"
 
 		except Exception as e:
-			print(f"[ERROR] reading cycle {cycle_id}: {e}")
+			print(f"[ERROR] Could not load selection {selection_id}: {e}")
 			traceback.print_exc()
 			return no_update

@@ -77,7 +77,7 @@ class DataBuffer:
 
 	__repr__ = __str__
 
-class ExtractionDashboard:
+class Dashboard:
 	"""
 	Class to manage the tracking dashboard.
 	"""
@@ -288,9 +288,25 @@ class ExtractionDashboard:
 		fig = go.Figure()
 		figure_config = self.data_fields[key].plot_order
 		
-		for i, tmp in enumerate(figure_config):
-			x = kwargs.get(tmp['x'], [])
-			y = kwargs.get(tmp['y'], [])
+		for i, trace_config in enumerate(figure_config):
+			x = kwargs.get(trace_config['x'], [])
+			y = kwargs.get(trace_config['y'], [])
+
+			if 'z' in trace_config:
+				# Presence of coordinate 'z' in the trace definition is assumed to be
+				# a Heatmap by default
+				z = np.asarray(kwargs.get(trace_config['z'], []))
+
+				fig.add_trace(
+					go.Heatmap(
+						x = x,
+						y = y,
+						z = z.T,
+						**trace_config["settings"]
+					)
+				)
+
+				continue
 
 			if len(x) != len(y):
 				print(f"[ERROR] length missmatch between x and y for '{key}' trace id = {i}")
@@ -299,7 +315,7 @@ class ExtractionDashboard:
 			fig.add_trace(go.Scatter(
 				x = x,
 				y = y,
-				**tmp['settings']
+				**trace_config['settings']
 			))
 
 		self.data_fields[key].plot_layout(fig)
@@ -327,10 +343,10 @@ class ExtractionDashboard:
 			sys.exit(0)
 
 if __name__ == "__main__":
-	from toolbox.dashboard.profiles import SIS18Profile
+	from toolbox.dashboard.profiles import SIS18extraction
 
-	test = ExtractionDashboard(
-		profile = SIS18Profile(),
+	test = Dashboard(
+		profile = SIS18extraction(),
 		port = 35235, 
 		data_to_monitor = ["intensity"]
 	)

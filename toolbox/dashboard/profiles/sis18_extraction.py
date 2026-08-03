@@ -3,15 +3,16 @@ from functools import partial
 import numpy as np
 import xtrack as xt
 import pickle as pk
-from toolbox.dashboard.profiles.datafield import DataField, InfoField
+import h5py
+from toolbox.dashboard.profiles.models import DataField, InfoField, FileSelection, LoadedFile
 
 
-class SIS18Profile:
+class SIS18extraction:
 	def __init__(self, start_count_at_turn: int = 0):
 		self.start_count_at_turn = start_count_at_turn
 
-	name = "SIS18 KO"
-	def make_datafields(self, dashboard: ExtractionDashboard):
+	name = "SIS18 slow extraction"
+	def make_datafields(self, dashboard: Dashboard):
 		return {
 			'intensity': DataField(
 				buffer_dependance = ['turn', 'Nparticles'],
@@ -293,12 +294,64 @@ class SIS18Profile:
 						)
 					}
 				],
-				plot_layout = ES_entrance_phase_space_layout,
+				plot_layout = partial(ES_entrance_phase_space_layout, normalized = False),
 				category = "Phase Space"
 			),
+			'ES_entrance_phase_space:sampled': DataField(
+				buffer_dependance = [
+					"phase_space:histogram",
+					"phase_space:x_edges",
+					"phase_space:px_edges"
+				],
+				plot_order = [
+					{
+						"x": "phase_space:x_edges",
+						"y": "phase_space:px_edges",
+						"z": "phase_space:histogram",
+						"settings": dict(
+							colorscale = "Viridis",
+							zsmooth = False,
+							colorbar = dict(title = "Particles"),
+							hovertemplate = (
+								"x=%{x:.4e}<br>"
+								"px=%{y:.4e}<br>"
+								"particles=%{z}<extra></extra>"
+							),
+						)
+					}
+				],
+				plot_layout = partial(ES_entrance_phase_space_layout, normalized = False),
+				category = "Phase Space"
+			),
+			'ES_entrance_phase_space:sampled:normalised': DataField(
+				buffer_dependance = [
+					"phase_space:histogram",
+					"phase_space:x_edges",
+					'phase_space:px_edges'
+				],
+				plot_order = [
+					{
+						"x": "phase_space:x_edges",
+						"y": "phase_space:px_edges",
+						"z": "phase_space:histogram",
+						"settings": dict(
+							colorscale = "Viridis",
+							zsmooth = False,
+							colorbar = dict(title = "Particles"),
+							hovertemplate = (
+								"x=%{x:.4e}<br>"
+								"px=%{y:.4e}<br>"
+								"particles=%{z}<extra></extra>"
+							),
+						)
+					}
+				],
+				plot_layout = partial(ES_entrance_phase_space_layout, normalized = True),
+				category = "Phase Space"
+			)
 		}
 
-	def make_infofields(self, dashboard: ExtractionDashboard):
+	def make_infofields(self, dashboard: Dashboard):
 		return {
 			'particles:alive': InfoField(
 				buffer_dependance = ['Nparticles'],
@@ -315,23 +368,64 @@ class SIS18Profile:
 #			)
 		}
 
-	def read_file(self, filename: str) -> xt.Particles:
+	def read_file(self, filename: str) -> LoadedFile:
+		if h5py.is_hdf5(filename):
+			return self.read_phase_space_snapshots_file(filename)
+
+		return self.read_particles_file(filename)
+
+	def read_particles_file(self, filename: str) -> LoadedFile:
 		with open(filename, 'rb') as fid:
 			particles = xt.Particles.from_dict(pk.load(fid))
 
 		particles.sort(by = 'at_turn', interleave_lost_particles = True)
 
-		return particles
+		return LoadedFile(
+			data = particles, 
+			selections = [
+				FileSelection(
+					value = "all", 
+					label = "All data"
+				)
+			],
+			selection_name = "Dataset"
+		)
+
+	def read_phase_space_snapshots_file(self, filename: str) -> LoadedFile:
+		with h5py.File(filename, "r") as file:
+			data = {
+				"turns": file["turns"][:],
+				"histograms": file["histograms"][:],
+				"x_edges": file["x_edges"][:],
+				"px_edges": file["px_edges"][:],
+				"n_alive": file["n_alive"][:],
+			}
+		print("Data read from the file")
+		print(data)
+
+		return LoadedFile(
+			data = data,
+			selections = [
+				FileSelection(
+					value = int(turn),
+					label = f"Turn {int(turn)}"
+				)
+				for turn in data["turns"]
+			],
+			selection_name = "Turn",
+			processor = self.process_phase_space_snapshots_file,
+		)
 
 	def process_file(
-			self, 
-			dashboard: ExtractionDashboard, 
-			particles: xt.Particles | str, 
-			start_count_at_turn: None | int = None,
-			**kwargs
+		self, 
+		dashboard: Dashboard, 
+		particles: xt.Particles | str,
+		selection_id = None,
+		start_count_at_turn: None | int = None,
 		)-> dict:
 		"""
-		Maps the data needed extracted from the file according to `dashboard.data_to_expect`
+		Maps the data needed extracted from the `xtrack.Particles` object or a file
+		according the buffers the `Dashboard` expects.
 		"""
 		if start_count_at_turn is None:
 			start_count_at_turn = self.start_count_at_turn
@@ -397,8 +491,29 @@ class SIS18Profile:
 		
 		return data_mapping
 
+	def process_phase_space_snapshots_file(
+		self,
+		dashboard: Dashboard,
+		data: dict,
+		selection_id: int # Its the turn number of the snapshot
+		) -> dict:
+		"""
+		Maps the `data` extracted from the h5 file with the phase space snapshots
+		according the buffers the `Dashboard` expects.
+		"""
+		turns = np.asarray(data["turns"])
+		matches = np.flatnonzero(turns == selection_id)
+		if len(matches) == 0:
+			raise ValueError(f"No phase-space snapshot recorded at turn {selection_id}")
+
+		return {
+			"phase_space:histogram": data["histograms"][int(matches[0])],
+			"phase_space:x_edges": data['x_edges'],
+			"phase_space:px_edges": data['px_edges']
+		}
+
 # DataField callbacks
-def ES_inside_losses_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def ES_inside_losses_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 
 	x = np.array(dashboard.data_buffer['extracted_at_ES:x'].recent_data)
 	px = np.array(dashboard.data_buffer['extracted_at_ES:px'].recent_data)
@@ -419,7 +534,7 @@ def ES_inside_losses_callback(dashboard: ExtractionDashboard, start_count_at_tur
 	)
 	dashboard.data_buffer['ES_septum_losses:inside'].extend(losses_at_turn, batch_id = dashboard.current_batch_id)
 
-def ES_losses_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def ES_losses_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 	if dashboard.data_buffer['ES_septum_losses:inside'].last_batch_id != dashboard.current_batch_id:
 		ES_inside_losses_callback(dashboard, start_count_at_turn)
 
@@ -428,7 +543,7 @@ def ES_losses_callback(dashboard: ExtractionDashboard, start_count_at_turn: int 
 
 	dashboard.data_buffer['ES_septum_losses'].extend(lost_inside + lost_outside, batch_id = dashboard.current_batch_id)
 
-def spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0):
+def spill_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 	x = np.array(dashboard.data_buffer['extracted_at_ES:x'].recent_data)
 	px = np.array(dashboard.data_buffer['extracted_at_ES:px'].recent_data)
 
@@ -449,7 +564,7 @@ def spill_callback(dashboard: ExtractionDashboard, start_count_at_turn: int = 0)
 	)
 	dashboard.data_buffer['spill'].extend(losses_at_turn, batch_id = dashboard.current_batch_id)
 
-def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwargs):
+def _accumulated_quantity(dashboard: Dashboard, buffer_key: str, **kwargs):
 	"""
 	takes `buffer_key` and pushes the data to `"{buffer_key}:accumulated"`
 	"""
@@ -462,22 +577,22 @@ def _accumulated_quantity(dashboard: ExtractionDashboard, buffer_key: str, **kwa
 
 	dashboard.data_buffer[acc_buffer_key].extend(extension, batch_id = dashboard.current_batch_id)
 
-def accumulated_spill_callback(dashboard: ExtractionDashboard):
+def accumulated_spill_callback(dashboard: Dashboard):
 	if dashboard.data_buffer['spill'].last_batch_id != dashboard.current_batch_id:
 		spill_callback(dashboard)
 
 	_accumulated_quantity(dashboard, 'spill')
 
-def accumulated_outside_ES_losses_callback(dashboard: ExtractionDashboard):
+def accumulated_outside_ES_losses_callback(dashboard: Dashboard):
 	_accumulated_quantity(dashboard, 'lost_on_septum_wires', new_buffer_name = 'ES_septum_losses:outside:accumulated')
 
-def accumulated_inside_ES_losses_callback(dashboard: ExtractionDashboard):
+def accumulated_inside_ES_losses_callback(dashboard: Dashboard):
 	if dashboard.data_buffer['ES_septum_losses:inside'].last_batch_id != dashboard.current_batch_id:
 		ES_inside_losses_callback(dashboard)
 
 	_accumulated_quantity(dashboard, 'ES_septum_losses:inside')
 
-def accumulated_ES_losses_callback(dashboard: ExtractionDashboard):
+def accumulated_ES_losses_callback(dashboard: Dashboard):
 	if dashboard.data_buffer['ES_septum_losses:inside:accumulated'].last_batch_id != dashboard.current_batch_id:
 		accumulated_inside_ES_losses_callback(dashboard)
 
@@ -491,7 +606,7 @@ def accumulated_ES_losses_callback(dashboard: ExtractionDashboard):
 
 # InfoField callbacks
 
-def particles_info_callback(dashboard: ExtractionDashboard):
+def particles_info_callback(dashboard: Dashboard):
 	dashboard.info_dict['particles_alive'] = dashboard.data_buffer['Nparticles'].last()
 	
 	if not dashboard.info_dict['particles_total']:
@@ -499,7 +614,7 @@ def particles_info_callback(dashboard: ExtractionDashboard):
 
 	print(dashboard.info_dict)
 
-def spill_info_callback(dashboard: ExtractionDashboard):
+def spill_info_callback(dashboard: Dashboard):
 	if dashboard.data_buffer['spill:accumulated'].last_batch_id != dashboard.current_batch_id:
 		accumulated_spill_callback(dashboard)
 
@@ -564,55 +679,58 @@ def accumulated_ES_losses_layout(fig: go.Figure):
 		height = 700,
 	)
 
-def ES_entrance_phase_space_layout(fig: go.Figure):
-	# Anode
-	fig.add_shape(
-		type = 'line',
-		x0 = -0.055, y0 = -0.0085,
-		x1 = -0.055, y1 = -0.005,
-		line = dict(
-			color = "LightSeaGreen",
-			width = 4,
-			dash = "dashdot",
-		),
-		name = "Anode",
-		showlegend = True
-	)
+def ES_entrance_phase_space_layout(fig: go.Figure, *, normalized = False):
 
-	# Cathode
-	fig.add_shape(
-		type = 'path',
-		path = 'M -0.073 -0.0085 L -0.073 -0.005 L -0.083 -0.005 L -0.083 -0.0085 Z',
-		fillcolor = 'rgba(0, 0, 255, 0.3)',
-		line = dict(color = 'rgba(0, 0, 0, 0)'),
-		name = "Cathode",
-	)
-
-	# limits on ont being lost inside of the septum
-	px_loss_limit = np.linspace(-7.4e-3, -5.0e-3, 100).tolist()
-	x_loss_limit = list(map(lambda px: -0.055 - (px + 7.4e-3)**2 / (2 * 1.7857e-3), px_loss_limit))
-
-	path = f'M {x_loss_limit[0]},{px_loss_limit[0]} ' + ' '.join(
-		f'L {x},{y}' for x, y in zip(x_loss_limit[1:], px_loss_limit[1:])
-	)
-
-	fig.add_shape(
-		type = 'path',
-		path = path,
-		line = dict(
-			color = 'red',
-			dash = 'dash',
-			width = 2,
+	if not normalized:
+		# Anode
+		fig.add_shape(
+			type = 'line',
+			x0 = -0.055, y0 = -0.0085,
+			x1 = -0.055, y1 = -0.005,
+			line = dict(
+				color = "LightSeaGreen",
+				width = 4,
+				dash = "dashdot",
 			),
-		name = "Lost inside on the wires limit",
-		showlegend = True
-	)
+			name = "Anode",
+			showlegend = True
+		)
 
+		# Cathode
+		fig.add_shape(
+			type = 'path',
+			path = 'M -0.073 -0.0085 L -0.073 -0.005 L -0.083 -0.005 L -0.083 -0.0085 Z',
+			fillcolor = 'rgba(0, 0, 255, 0.3)',
+			line = dict(color = 'rgba(0, 0, 0, 0)'),
+			name = "Cathode",
+		)
+
+		# limits on ont being lost inside of the septum
+		px_loss_limit = np.linspace(-7.4e-3, -5.0e-3, 100).tolist()
+		x_loss_limit = list(map(lambda px: -0.055 - (px + 7.4e-3)**2 / (2 * 1.7857e-3), px_loss_limit))
+
+		path = f'M {x_loss_limit[0]},{px_loss_limit[0]} ' + ' '.join(
+			f'L {x},{y}' for x, y in zip(x_loss_limit[1:], px_loss_limit[1:])
+		)
+
+		fig.add_shape(
+			type = 'path',
+			path = path,
+			line = dict(
+				color = 'red',
+				dash = 'dash',
+				width = 2,
+				),
+			name = "Lost inside on the wires limit",
+			showlegend = True
+		)
+	title = "Normalised phase " if normalized else "Phase "
+	title += "space at ES entrance"
 	fig.update_layout(
-		title = 'Phase space at ES entrance',
-		width = 800,
+		title = title,
+		width = 700,
 		height = 700,
-		xaxis_title = 'x [m]',
-		yaxis_title = 'px [rad]',
+		xaxis_title = 'x_norm' if normalized else 'x [m]',
+		yaxis_title = 'px_norm' if normalized else 'px [rad]',
 		showlegend = True
 	)
