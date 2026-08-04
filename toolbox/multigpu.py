@@ -14,7 +14,6 @@ import xtrack as xt
 import time
 import os
 import h5py
-from toolbox.phase_space.extra import PhaseSpaceSampler
 
 
 def split_indices(n_elements: int, n_chuncks: int):
@@ -32,15 +31,61 @@ def log_worker(t0, device, msg, *, verbose: int = 2):
 	now = time.time() - t0
 	print(f"[device = {device}] {now:.6f} s: {msg}", flush = True)
 
+def save_monitor_portion(
+	output: h5py.File,
+	monitor: xt.ParticlesMonitor,
+	context: xo.ContextPyopencl,
+	*,
+	portion_index: int,
+	portion_start: int,
+	record_every: int,
+	num_snapshots: int
+	):
+	group = output.create_group(f"portions/{portion_index:06d}")
+
+	turns = portion_start + np.arange(num_snapshots, dtype = np.int64) * record_every
+
+	group.create_dataset("turns", data = turns)
+
+	for field in ("x", "px", "y", "py", "zeta", "delta", "state"):
+		context_array = getattr(monitor, field)
+
+		host_array = context.nparray_from_context_array(context_array)[..., 0]
+
+		group.create_dataset(
+			field,
+			data = host_array,
+			compression = "lzf",
+			shuffle = True
+		)
+
+	group.attrs["record_every"] = record_every
+	group.attrs["start_at_turn"] = portion_start
+	group.attrs["num_snapshots"] = num_snapshots
+	group.attrs["particle_id_start"] = int(monitor.part_id_start)
+	group.attrs["particle_id_end"] = int(monitor.part_id_end)
+
 def worker(
 	build_line: Callable[[], xt.Line],
 	device: str,
 	num_turns: int,
 	folder: str,
 	verbose: int = 0,
-	build_sampler: Callable[[], object] | None = None,
+	record_every: int | None = None,
+	monitor_budget: int | None = None
 	):
 	"""
+	If `record_every` is provided, the worker uses `xt.ParticlesMonitor` to
+	record the data. The worker splits the total number of turns into multiple chunks
+	of turns, so the memory the monitor occupies remains below the **limit**. 
+
+	The limit is either given as an argument or is set based on the rule of thumb:
+	```python
+		monitor_budget = min(
+		int(0.20 * device.global_mem_size),
+		int(0.80 * device.max_mem_alloc_size)
+	)
+
 	Parameters
 	----------
 	build_line
@@ -53,7 +98,12 @@ def worker(
 		Name of the folder to read/write the particles' data
 	verbose
 		If `varbose > 1` prints the output from the worker
-	build_sampler
+	record_every
+		If provided will record the coordinates with `xt.ParticlesMonitor`
+	monitor_budget
+		Memory budget in bytes for the memory the `xt.ParticlesMonitor` is
+		allowed to occupy.
+		
 	"""
 	t0 = time.time()
 
@@ -63,17 +113,11 @@ def worker(
 		"with_progress": verbose > 1
 	}
 
-	# Special case to store the pixelised phase space image
-	phase_space_sampler = None
-	if build_sampler is not None:
-		phase_space_sampler = build_sampler()
-		default_track_kwargs["log"] = phase_space_sampler
-
 	log_worker(t0, device, "Created tracking configureation", verbose = verbose)
 	
 	current_context =  xo.ContextPyopencl(device)
 	log_worker(t0, device, "Created context", verbose = verbose)
-	
+
 	line_to_track = build_line()
 	log_worker(t0, device, "Created a line", verbose = verbose)
 
@@ -87,11 +131,92 @@ def worker(
 
 	log_worker(t0, device, "Created particle beam", verbose = verbose)
 
-	line_to_track.track(
-		particles = beam_chunk, 
-		num_turns = num_turns,
-		**default_track_kwargs
-	)
+	if record_every:
+		if monitor_budget is None:
+			monitor_budget = min(
+				int(0.20 * current_context.device.global_mem_size),
+				int(0.80 * current_context.device.max_mem_alloc_size)
+			)
+
+		bytes_per_record = sum(
+			field_type._size
+			for field_type, _ in xt.Particles.per_particle_vars
+		)
+
+		number_of_particles = beam_chunk._capacity
+		bytes_per_snapshot = number_of_particles * bytes_per_record
+
+		snapshots_budget = monitor_budget // bytes_per_snapshot
+
+		if snapshots_budget < 1:
+			raise MemoryError(
+				"A single particle snapshot does not fit inside"
+				f"The monitor budget of {monitor_budget / 2**30:.2f} GiB"
+			)
+
+		turns_budget = snapshots_budget * record_every
+
+		n_max_budgets = num_turns // turns_budget
+		rest_turns = num_turns % turns_budget
+		turns_split = [turns_budget] * n_max_budgets
+		if rest_turns:
+			turns_split.append(rest_turns)
+
+		monitor_filename = os.path.join(folder, f"particle_monitor_{device}.h5")
+
+		_start_turn = 0
+		with h5py.File(monitor_filename, "w") as output:
+			for portion_index, num_turns_portion in enumerate(turns_split):
+				monitor = xt.ParticlesMonitor(
+					_context = current_context,
+					num_particles = number_of_particles,
+					start_at_turn = _start_turn,
+					stop_at_turn = _start_turn + 1,
+					repetition_period = record_every,
+					n_repetitions = (num_turns_portion + record_every - 1) // record_every,
+					auto_to_numpy = False
+					)
+				default_track_kwargs["turn_by_turn_monitor"] = monitor
+
+				line_to_track.track(
+					particles = beam_chunk, 
+					num_turns = num_turns_portion,
+					**default_track_kwargs
+				)
+				log_worker(
+					t0, 
+					device, 
+					f"Portion {portion_index} | Finished tracking | Track time = {line_to_track.time_last_track}", 
+					verbose = verbose
+				)
+
+				save_monitor_portion(	
+					output,
+					monitor, 
+					current_context,
+					portion_index = portion_index,
+					portion_start = _start_turn,
+					record_every = record_every,
+					num_snapshots = (num_turns_portion + record_every - 1) // record_every
+				)
+				log_worker(
+					t0, 
+					device, 
+					f"Portion {portion_index} | Monitor data saved", 
+					verbose = verbose
+				)
+
+				_start_turn += num_turns_portion
+
+				default_track_kwargs["turn_by_turn_monitor"] = False
+				del monitor
+	else:
+		# default tracking without memory balancing
+		line_to_track.track(
+			particles = beam_chunk, 
+			num_turns = num_turns,
+			**default_track_kwargs
+		)
 
 	log_worker(t0, device, f"Finished tracking | Track time = {line_to_track.time_last_track}", verbose = verbose)
 
@@ -99,12 +224,6 @@ def worker(
 		pk.dump(beam_chunk.to_dict(), fid)
 	
 	log_worker(t0, device, "Saved the chunk of the beam", verbose = verbose)
-
-	if phase_space_sampler is not None:
-		# special case -> saving the phase space snapshots to the memory
-		phase_space_sampler.save_data(os.path.join(folder, f"phase_space_chunk_{device}.h5"))
-
-	log_worker(t0, device, "Saved the chunk of phase space snapshots", verbose = verbose)
 
 def log_main(t0, msg, *, verbose: int = 1):
 	if verbose < 1:
@@ -119,9 +238,10 @@ def track_multigpu(
 	line_constructor: Callable[[], xt.Line], 
 	num_turns: int, 
 	num_gpus: int,
-	phase_space_sampler: Callable[[], PhaseSpaceSampler] | None = None,
 	verbose: int = 1,
-	) -> xt.Particles | tuple[xt.Particles, PhaseSpaceSampler]:
+	record_every: int | None = None,
+	monitor_budget: int | None = None
+	) -> xt.Particles:
 	"""
 	Runs tracking on GSI HPC with multiple GPUs.
 
@@ -201,9 +321,9 @@ def track_multigpu(
 				num_turns, 
 				temp_folder, 
 				verbose, 
-				phase_space_sampler
+				record_every,
+				monitor_budget
 			),
-
 		)
 		procs.append(p)
 
@@ -240,23 +360,10 @@ def track_multigpu(
 	
 	log_main(t0, f"Processed particles data", verbose = verbose)
 
-	merged_sampler = None
-	if phase_space_sampler is not None:
-		merged_sampler = phase_space_sampler()
-
-		with h5py.File(os.path.join(temp_folder, f"phase_space_chunk_{devices[0]}.h5"), "r") as file:
-			merged_sampler.histograms = file["histograms"][:].astype(np.uint32)
-			merged_sampler.turns = file["turns"][:]
-
-		for device in devices[1:]:
-			with h5py.File(os.path.join(temp_folder, f"phase_space_chunk_{device}.h5"), "r") as file:
-				merged_sampler.histograms += file["histograms"][:]
-
-		log_main(t0, f"Merged phase space images", verbose = verbose)
-
-		log_main(t0, f"Finished", verbose = verbose)
-
-		return tracked_beam, merged_sampler
+	
+	if record_every is not None:
+		
+		return tracked_beam
 	
 	log_main(t0, f"Finished", verbose = verbose)
 
