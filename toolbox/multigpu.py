@@ -5,6 +5,8 @@ over multiple GPUs that are available to the user.
 
 import warnings
 from collections.abc import Callable
+from pathlib import Path
+import shutil
 import multiprocessing as mp
 import tempfile
 import numpy as np
@@ -51,6 +53,8 @@ def save_monitor_portion(
 		context_array = getattr(monitor, field)
 
 		host_array = context.nparray_from_context_array(context_array)[..., 0]
+
+		host_array = host_array.reshape(num_snapshots, -1)
 
 		group.create_dataset(
 			field,
@@ -143,8 +147,9 @@ def worker(
 			for field_type, _ in xt.Particles.per_particle_vars
 		)
 
-		number_of_particles = beam_chunk._capacity
-		bytes_per_snapshot = number_of_particles * bytes_per_record
+		bytes_per_snapshot = beam_chunk._capacity * bytes_per_record
+
+		particle_id_range = beam_chunk.get_active_particle_id_range()
 
 		snapshots_budget = monitor_budget // bytes_per_snapshot
 
@@ -167,14 +172,25 @@ def worker(
 		_start_turn = 0
 		with h5py.File(monitor_filename, "w") as output:
 			for portion_index, num_turns_portion in enumerate(turns_split):
-				monitor = xt.ParticlesMonitor(
-					_context = current_context,
-					num_particles = number_of_particles,
+				monitor_kwargs = dict(
+					particle_id_range = particle_id_range,
 					start_at_turn = _start_turn,
 					stop_at_turn = _start_turn + 1,
 					repetition_period = record_every,
 					n_repetitions = (num_turns_portion + record_every - 1) // record_every,
 					auto_to_numpy = False
+				)
+
+				log_worker(
+					t0, 
+					device, 
+					f"Portion {portion_index} | Monitor Created | Arguments = {monitor_kwargs}", 
+					verbose = verbose
+				)
+
+				monitor = xt.ParticlesMonitor(
+					_context = current_context,
+					**monitor_kwargs
 					)
 				default_track_kwargs["turn_by_turn_monitor"] = monitor
 
@@ -240,7 +256,8 @@ def track_multigpu(
 	num_gpus: int,
 	verbose: int = 1,
 	record_every: int | None = None,
-	monitor_budget: int | None = None
+	monitor_budget: int | None = None,
+	monitor_output_directory: str | Path | None = None
 	) -> xt.Particles:
 	"""
 	Runs tracking on GSI HPC with multiple GPUs.
@@ -277,6 +294,12 @@ def track_multigpu(
 		- The tracked particles.
 		- The merged phase-space sampler containing snapshots from all workers.
 	"""
+	if record_every is not None and record_every <= 0:
+		raise ValueError("`record_every` must be positive")
+
+	if record_every is not None and monitor_output_directory is None:
+		raise ValueError("`monitor_output_directory` is required when recording")
+
 	t0 = time.time()
 
 	mp.set_start_method("spawn", force = True)
@@ -362,8 +385,16 @@ def track_multigpu(
 
 	
 	if record_every is not None:
-		
-		return tracked_beam
+		output_directory = Path(monitor_output_directory)
+		output_directory.mkdir(parents = True, exist_ok = True)
+
+		for device in devices:
+			source = Path(temp_folder) / f"particle_monitor_{device}.h5"
+			destination = output_directory / f"particle_monitor_{str(device).replace(".", "_")}"
+
+			shutil.copy2(source, destination)
+
+		log_main(t0, f"Copied monitor data", verbose = verbose)
 	
 	log_main(t0, f"Finished", verbose = verbose)
 
