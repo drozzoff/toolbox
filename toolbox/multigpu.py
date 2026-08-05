@@ -169,6 +169,8 @@ def worker(
 
 		monitor_filename = os.path.join(folder, f"particle_monitor_{device}.h5")
 
+		number_portions = len(turns_split)
+
 		_start_turn = 0
 		with h5py.File(monitor_filename, "w") as output:
 			for portion_index, num_turns_portion in enumerate(turns_split):
@@ -184,7 +186,7 @@ def worker(
 				log_worker(
 					t0, 
 					device, 
-					f"Portion {portion_index} | Monitor Created | Arguments = {monitor_kwargs}", 
+					f"Portion {portion_index}/{number_portions} | Monitor Created | Arguments = {monitor_kwargs}", 
 					verbose = verbose
 				)
 
@@ -390,7 +392,7 @@ def track_multigpu(
 
 		for device in devices:
 			source = Path(temp_folder) / f"particle_monitor_{device}.h5"
-			destination = output_directory / f"particle_monitor_{str(device).replace(".", "_")}"
+			destination = output_directory / f"particle_monitor_{str(device).replace(".", "_")}.h5"
 
 			shutil.copy2(source, destination)
 
