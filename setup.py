@@ -20,8 +20,8 @@ DEPENDENCIES = [
 
 setup(
 	name = "toolbox",
-	version = "0.0.1-alpha",
-	description = "Some functionality to assist Synchroton analysis",
+	version = "0.0.1",
+	description = "Some functionality aimed to be used with xsuite",
 	author = "Andrii Pastushenko",
 	url = "to add",
 	python_requires = ">=3.7",
