@@ -392,7 +392,7 @@ def track_multigpu(
 
 		for device in devices:
 			source = Path(temp_folder) / f"particle_monitor_{device}.h5"
-			destination = output_directory / f"particle_monitor_{str(device).replace(".", "_")}.h5"
+			destination = output_directory / f"particle_monitor_{str(device).replace('.', '_')}.h5"
 
 			shutil.copy2(source, destination)
 
