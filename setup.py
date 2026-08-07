@@ -9,6 +9,7 @@ DEPENDENCIES = [
 	'plotly',
 	'dash',
 	'scikit-learn',
+	'scikit-image',
 	'seaborn',
 	'flask-compress',
 	'h5py',
@@ -23,7 +24,7 @@ setup(
 	version = "0.0.1",
 	description = "Some functionality aimed to be used with xsuite",
 	author = "Andrii Pastushenko",
-	url = "to add",
+	url = "https://github.com/drozzoff/toolbox",
 	python_requires = ">=3.10",
 	license = "MIT",
 	
@@ -38,7 +39,8 @@ setup(
 		"Natural Language :: English",
 		"Programming Language :: Python",
 		"Programming Language :: Python :: 3 :: Only",
-		"Programming Language :: Python :: 3.7",
+		"Programming Language :: Python :: 3.10",
+		"Programming Language :: Python :: 3.11",
 		"Topic :: Scientific/Engineering :: Physics",
 	],
 )
