@@ -434,7 +434,7 @@ class SIS18extraction:
 			particles = self.read_file(particles)
 
 		max_turns = max(particles.at_turn)
-		turns_list = list(range(max_turns + 1))
+		turns_list = list(range(1, max_turns + 1))
 		
 		# basic masks
 		lost_mask = particles.state == 0
@@ -560,9 +560,12 @@ def spill_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 
 	losses_at_turn = np.bincount(
 		survived_inside_septum_at_turn,
-		minlength = end_turn - start_turn
+		minlength = end_turn - start_turn + 1
 	)
-	dashboard.data_buffer['spill'].extend(losses_at_turn, batch_id = dashboard.current_batch_id)
+	dashboard.data_buffer['spill'].extend(
+		losses_at_turn,
+		batch_id = dashboard.current_batch_id
+	)
 
 def _accumulated_quantity(dashboard: Dashboard, buffer_key: str, **kwargs):
 	"""

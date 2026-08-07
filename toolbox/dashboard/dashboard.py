@@ -309,7 +309,10 @@ class Dashboard:
 				continue
 
 			if len(x) != len(y):
-				print(f"[ERROR] length missmatch between x and y for '{key}' trace id = {i}")
+				print(
+					f"[ERROR] length mismatch for {key!r}, trace {i}:"
+					f"x = {len(x)}, y = {len(y)}"
+				)
 				return
 
 			fig.add_trace(go.Scatter(
