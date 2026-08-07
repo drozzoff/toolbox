@@ -1,30 +1,17 @@
 import numpy as np
-import xtrack as xt
-from pandas import DataFrame
 import h5py
+from pathlib import Path
 
 
-class PhaseSpaceSampler:
-	"""
-	The idea is that we reduce the resolution of the phase space. For instance to 64x64 or 100x100.
-	It is not practically possible to keep the phase space information for any turn when number of particles
-	used and number of turns are large. 
-	**E.g.** Tracking on GPU of 250k particles for 1kk turns means to store
-	**8 bytes x 2.5e4 x 1e6 ~ 2.0TB** of data in RAM.
-
-	But phase space scalled down to a resolution of 100x100 in selected window and recorded every 1k turns means
-	we only need **4 bytes  1000 x 100 x 100 ~ 40 MB** in `np.uint32` format.
-
-	The way is to use it as a callback during the tracking.
-	"""
+class PhaseSpaceSnapshot:
 	def __init__(self, 
-		xlim: list,
-		pxlim: list,
-		every: int = 1_000,
-		n_bins: int = 100,
-		in_normalised_coordinates: bool = False,
-		tw: xt.twiss.TwissTable | None = None,
-		nemitt_x: float | None = None  
+		x_edges: np.ndarray,
+		px_edges = np.ndarray,
+		*,
+		at_turn: int | None = None,
+		x: np.ndarray | None = None, 
+		px: np.ndarray | None = None, 
+		state: np.ndarray | None = None,
 		):
 		"""
 		Parameters
@@ -37,72 +24,147 @@ class PhaseSpaceSampler:
 			Frequency of the phase space snapshots
 		n_bins
 			Number of bins to use in each plane
-		in_normalised_coordinates
-			If True, coordinates are assumed to be normalized coordinates. 
-			If `True` `tw` must be provided too.
-		tw
-			If using normalized coordinates, Twiss table is used to convert the coodinates
-		nemitt_x
-			Normalised horizontal emittance, when normalised coordinates are used
 		"""
-		self.x_edges = np.linspace(*xlim, n_bins + 1)
-		self.px_edges = np.linspace(*pxlim, n_bins + 1)
-		self.in_normalised_coordinates = in_normalised_coordinates
-		self.every = every
-		self.tw = tw
-		self.nemitt_x = nemitt_x
-		
-		self._call = 0
-		self.turns = []
-		self.histograms = []
-		self.n_alive = []
-		
-	def __call__(self, line: xt.Line, particles:xt.Particles, **kwargs):
-		"""
-		The function used to do the logging inside `xtrack.Line.track()`.
-		"""
-		sample_now = (self._call % self.every) == 0
-		turn = self._call
-		self._call += 1
+		self.x_edges = x_edges
+		self.px_edges = px_edges
 
-		if not sample_now:
-			return None
+		self.at_turn = at_turn
+		self.histogram = None
+		self.n_alive = None
+
+		if self.at_turn is not None:
+			self.calculate_histogram(x, px, state)
 		
-		ctx = particles._context
-		
-		x = ctx.nparray_from_context_array(particles.x)
-		px = ctx.nparray_from_context_array(particles.px)
-		state = ctx.nparray_from_context_array(particles.state)
+	def calculate_histogram(
+		self,
+		x: np.ndarray, 
+		px: np.ndarray, 
+		state: np.ndarray,
+		):
+		"""
+		"""
 		alive = state > 0
 
 		x_for_hist = x[alive]
 		px_for_hist = px[alive]
 
-		if self.in_normalised_coordinates:
-			norm_coords = self.tw.get_normalized_coordinates(
-				line.build_particles(x = x_for_hist, px = px_for_hist), 
-				nemitt_x = self.nemitt_x, 
-				nemitt_y = 0
-			)
-			x_for_hist = norm_coords.x_norm
-			px_for_hist = norm_coords.px_norm
-		
 		hist, _, _ = np.histogram2d(
 			x_for_hist,
 			px_for_hist,
 			bins = (self.x_edges, self.px_edges),
 		)
 
-		hist = hist.astype(np.uint32)
-		alive_particles = np.sum(alive)
-		
-		self.turns.append(turn)
-		self.histograms.append(hist)
-		self.n_alive.append(alive_particles)
+		self.histogram = hist.astype(np.uint32)
+		self.n_alive = np.count_nonzero(alive)
 
-		return alive_particles
+class PhaseSpaceSnapshots:
+	"""
+	The idea is that we reduce the resolution of the phase space. For instance to 64x64 or 100x100.
+	It is not practically possible to keep the phase space information for any turn when number of particles
+	used and number of turns are large. 
+	**E.g.** Tracking on GPU of 250k particles for 1kk turns means to store
+	**8 bytes x 2.5e4 x 1e6 ~ 2.0TB** of data in RAM.
 
-	def save_data(self, filename: str = "phase_space_snapshots.h5"):
+	But phase space scalled down to a resolution of 100x100 in selected window and recorded every 1k turns means
+	we only need **4 bytes  1000 x 100 x 100 ~ 40 MB** in `np.uint32` format.
+	"""
+	def __init__(self, 
+		xlim: list,
+		pxlim: list,
+		n_bins: int = 100,
+		*,
+		filename: str | Path
+		):
+
+		self.x_edges = np.linspace(*xlim, n_bins + 1)
+		self.px_edges = np.linspace(*pxlim, n_bins + 1)
+
+		self.histograms = []
+		self.turns = []
+		self.n_alive = []
+
+		if filename is not None:
+			self.process_monitor_data(filename)
+
+	def process_monitor_data(self, filename: str | Path):
+		with h5py.File(filename, "r") as f:
+			portions = f["portions"]
+
+			for portion_name in portions:
+				group = portions[portion_name]
+
+				turns = group["turns"]
+
+				for i, at_turn in enumerate(turns):
+					snapshot = PhaseSpaceSnapshot(
+						self.x_edges,
+						self.px_edges,
+						at_turn = at_turn,
+						x = group["x"][i],
+						px = group["px"][i],
+						state = group["state"][i],
+					)
+
+					self.histograms.append(snapshot.histogram)
+					self.turns.append(snapshot.at_turn)
+					self.n_alive.append(snapshot.n_alive)
+
+	def __iadd__(self, other):
+		if not isinstance(other, PhaseSpaceSnapshots):
+			return NotImplemented
+
+		np.testing.assert_array_equal(self.x_edges, other.x_edges)
+		np.testing.assert_array_equal(self.px_edges, other.px_edges)
+		np.testing.assert_array_equal(self.turns, other.turns)
+
+		if len(self.histograms) != len(other.histograms):
+			raise ValueError("Number of snapshots does not match.")
+
+		self.histograms = [
+			h1 + h2
+			for h1, h2 in zip(self.histograms, other.histograms)
+		]
+
+		self.n_alive = [
+			n1 + n2
+			for n1, n2 in zip(self.n_alive, other.n_alive)
+		]
+
+		return self
+
+	def __add__(self, other):
+		if not isinstance(other, PhaseSpaceSnapshots):
+			return NotImplemented
+
+		np.testing.assert_array_equal(self.x_edges, other.x_edges)
+		np.testing.assert_array_equal(self.px_edges, other.px_edges)
+		np.testing.assert_array_equal(self.turns, other.turn)
+
+		if len(self.histograms) != len(other.histograms):
+			raise ValueError("Number of snapshots does not match.")
+
+		result = PhaseSpaceSnapshots(
+			xlim = [self.x_edges[0], self.x_edges[-1]],
+			pxlim = [self.px_edges[0], self.px_edges[-1]],
+			n_bins = len(self.x_edges) - 1,
+			filename = None,
+		)
+
+		result.turns = list(self.turns)
+
+		result.histograms = [
+			h1 + h2
+			for h1, h2 in zip(self.histograms, other.histograms)
+		]
+
+		result.n_alive = [
+			n1 + n2
+			for n1, n2 in zip(self.n_alive, other.n_alive)
+		]
+
+		return result
+					
+	def save_data(self, filename: str | Path = "phase_space_snapshots.h5"):
 		"""
 		Save the data in HDF5 format in the following structure
 		phase_space_snapshots.h5
@@ -112,9 +174,7 @@ class PhaseSpaceSampler:
 		├── x_edges			shape: (n_x_bins + 1,)
 		├── px_edges		shape: (n_px_bins + 1,)
 		└── attrs
-			├── every
-			├── in_normalised_coordinates
-			└── nemitt_x
+			└── 
 		"""
 		with h5py.File(filename, "w") as f:
 			f.create_dataset(
@@ -127,8 +187,3 @@ class PhaseSpaceSampler:
 			f.create_dataset("n_alive", data = np.asarray(self.n_alive, dtype = np.uint32))
 			f.create_dataset("x_edges", data = self.x_edges)
 			f.create_dataset("px_edges", data = self.px_edges)
-
-			f.attrs["every"] = self.every
-			f.attrs["in_normalized_coordinates"] = self.in_normalised_coordinates
-			if self.nemitt_x is not None:
-				f.attrs["nemitt_x"] = self.nemitt_x
