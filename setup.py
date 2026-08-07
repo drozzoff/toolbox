@@ -24,7 +24,7 @@ setup(
 	description = "Some functionality aimed to be used with xsuite",
 	author = "Andrii Pastushenko",
 	url = "to add",
-	python_requires = ">=3.7",
+	python_requires = ">=3.10",
 	license = "MIT",
 	
 	packages = find_packages(include = ["toolbox", "toolbox.*"]),

@@ -37,9 +37,7 @@ jobs:
 
           module_names = [
               module.name
-              for module in pkgutil.walk_packages(
-                  toolbox.__path__, prefix=f"{toolbox.__name__}."
-              )
+              for module in pkgutil.walk_packages(toolbox.__path__, prefix = f"{toolbox.__name__}.")
           ]
 
           for module_name in module_names:

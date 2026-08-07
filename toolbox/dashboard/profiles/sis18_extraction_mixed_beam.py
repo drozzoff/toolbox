@@ -118,13 +118,13 @@ class SIS18extraction_mixed_beam:
 						line = dict(
 							color = "blue"
 						),
-						name = f"{self.ion1.get('name', "Ion 1")}/{self.ion2.get('name', "Ion 2")}",
+						name = f"{self.ion1.get('name', 'Ion 1')}/{self.ion2.get('name', 'Ion 2')}",
 						showlegend = False
 					)
 				},
 			],
 			bin = dict(enabled = True, x = "middle", y = "sum"),
-			plot_layout = partial(spill_layout, title = f"Spill, mixed; {self.ion1.get('name', "Ion 1")}/{self.ion2.get('name', "Ion 2")}"),
+			plot_layout = partial(spill_layout, title = f"Spill, mixed; {self.ion1.get('name', 'Ion 1')}/{self.ion2.get('name', 'Ion 2')}"),
 			category = "Turn By Turn"
 		)
 		res['spill:ion1:accumulated'] =  DataField(
