@@ -193,4 +193,4 @@ snapshots.save_data("phase_space_snapshots.h5")
 
 ## License
 
-The package metadata declares the project under the MIT License. A corresponding `LICENSE` file should be added to the repository.
+This project is licensed under the [MIT License](LICENSE).
