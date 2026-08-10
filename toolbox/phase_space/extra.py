@@ -1,7 +1,7 @@
 import numpy as np
 import h5py
 from pathlib import Path
-
+import tqdm
 
 class PhaseSpaceSnapshot:
 	def __init__(self, 
@@ -90,7 +90,7 @@ class PhaseSpaceSnapshots:
 		with h5py.File(filename, "r") as f:
 			portions = f["portions"]
 
-			for portion_name in portions:
+			for portion_name in tqdm(portions):
 				group = portions[portion_name]
 
 				turns = group["turns"]

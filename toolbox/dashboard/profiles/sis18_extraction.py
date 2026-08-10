@@ -320,7 +320,7 @@ class SIS18extraction:
 						)
 					}
 				],
-				plot_layout = partial(ES_entrance_phase_space_layout, normalized = False),
+				plot_layout = partial(ES_entrance_phase_space_layout, normalized = False, simple = True),
 				category = "Phase Space"
 			),
 			'ES_entrance_phase_space:sampled:normalised': DataField(
@@ -682,9 +682,9 @@ def accumulated_ES_losses_layout(fig: go.Figure):
 		height = 700,
 	)
 
-def ES_entrance_phase_space_layout(fig: go.Figure, *, normalized = False):
+def ES_entrance_phase_space_layout(fig: go.Figure, *, normalized = False, simple = False):
 
-	if not normalized:
+	if not normalized and not simple:
 		# Anode
 		fig.add_shape(
 			type = 'line',
