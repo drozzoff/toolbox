@@ -73,7 +73,7 @@ class PhaseSpaceSnapshots:
 		pxlim: list,
 		n_bins: int = 100,
 		*,
-		filename: str | Path
+		filename: str | Path | None = None
 		):
 
 		self.x_edges = np.linspace(*xlim, n_bins + 1)
