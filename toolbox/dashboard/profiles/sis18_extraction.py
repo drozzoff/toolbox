@@ -153,6 +153,29 @@ class SIS18extraction:
 				plot_layout = spill_layout,
 				category = "Turn By Turn"
 			),
+			'spill_to_stored': DataField(
+				buffer_dependance = ['turn', 'spill', 'Nparticles'], 
+				output_buffers = ['spill_to_stored'],
+				callback = partial(spill_to_stored_callback, dashboard, start_count_at_turn = self.start_count_at_turn),
+				callback_level = 1,
+				plot_from = ['turn', 'spill_to_stored'],
+				plot_order = [
+					{
+						"x": 'turn',
+						"y": 'spill_to_stored',
+						"settings": dict(
+							mode = "lines",
+							line = dict(
+								color = "blue"
+							),
+							name = "Spill to stored"
+						)
+					},
+				],
+				bin = dict(enabled = True, x = "middle", y = "mean"),
+				plot_layout = spill_layout,
+				category = "Turn By Turn"
+			),
 			'spill:accumulated': DataField(
 				buffer_dependance = ['turn', 'spill'], 
 				output_buffers = ['spill:accumulated'],
@@ -567,6 +590,19 @@ def spill_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
 		batch_id = dashboard.current_batch_id
 	)
 
+def spill_to_stored_callback(dashboard: Dashboard, start_count_at_turn: int = 0):
+	if dashboard.data_buffer['spill'].last_batch_id != dashboard.current_batch_id:
+		spill_callback(dashboard, start_count_at_turn)
+
+	total_alive = np.array(dashboard.data_buffer['Nparticles'].recent_data)
+
+	spill_to_stored =  np.array(dashboard.data_buffer['spill'].recent_data) / total_alive
+
+	dashboard.data_buffer['spill_to_stored'].extend(
+		spill_to_stored, 
+		batch_id = dashboard.current_batch_id
+	)
+
 def _accumulated_quantity(dashboard: Dashboard, buffer_key: str, **kwargs):
 	"""
 	takes `buffer_key` and pushes the data to `"{buffer_key}:accumulated"`
@@ -659,6 +695,15 @@ def ES_losses_layout(fig: go.Figure):
 def spill_layout(fig: go.Figure):
 	fig.update_layout(
 		title = 'Spill',
+		xaxis_title = 'turn',
+		yaxis_title = 'Spill [a.u.]',
+		height = 400,
+		showlegend = False
+	)
+
+def spill_to_stored_layout(fig: go.Figure):
+	fig.update_layout(
+		title = 'Spill / stored',
 		xaxis_title = 'turn',
 		yaxis_title = 'Spill [a.u.]',
 		height = 400,
