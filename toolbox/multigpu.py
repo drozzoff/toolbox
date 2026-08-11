@@ -43,6 +43,29 @@ def save_monitor_portion(
 	record_every: int,
 	num_snapshots: int
 	):
+	"""
+	Dumps `xt.ParticlesMonitor` data into an existing `"h5"` file. Saves 6d phase 
+	space along with `at_turn` and `state`. Since its possible the tracking 
+	on the gpu is split into multiple chunks of turns to keep the memory below 
+	the limit, multiple monitors might be used to dump the data for 1 gpu.
+
+	Parameters
+	----------
+	output
+		Output file. Must be already created one
+	monitor
+		Monitor to save
+	context
+		Context the monitor exists at
+	portion_index
+		Portion id
+	portion_start
+		Initial turn of the recorded data
+	record_every
+		Defines how frequently the monitor recorded the data
+	num_snapshots
+		Number of snapshots in the monitor memory
+	"""
 	group = output.create_group(f"portions/{portion_index:06d}")
 
 	turns = portion_start + np.arange(num_snapshots, dtype = np.int64) * record_every
@@ -262,10 +285,8 @@ def track_multigpu(
 	monitor_output_directory: str | Path | None = None
 	) -> xt.Particles:
 	"""
-	Runs tracking on GSI HPC with multiple GPUs.
-
-	Similarly to `xtrack.track()` the coordinates passed must have the same length. But
-	1-element arrays are acceptable, as it is expanded automatically.
+	Runs tracking on multiple GPUs. By default the workers use `xo.ContextPyopencl`
+	context to do the tracking. 
 
 	Parameters
 	----------
@@ -285,16 +306,19 @@ def track_multigpu(
 		`0` - no output
 		`1` - output from main process
 		`2` - output from main and workers' processes
-	phase_space_sampler
-		A constructor for `PhaseSpaceSampler` object for the phase space evolution recording.
+	record_every
+		If provided, uses `xt.ParticlesMonitor` to record the turn-by-turn data every `record_every`
+		given turn.
+	monitor_budget
+		Maximum memory the monitor can occupy in memory when `record_every` is provided.
+	monitor_output_directory
+		The directory to save the monitors data after the tracking. The worker save 6d coordinates
+		along with `at_turn` and `state` for each particle. Creates a file for each GPU used in the
+		tracking
 	Returns
 	-------
-	xt.Particles or tuple[xt.Particles, PhaseSpaceSampler]
-		If `phase_space_sampler` is `None`, returns the tracked particles.
-
-		If a phase-space sampler constructor is provided, returns a tuple containing:
-		- The tracked particles.
-		- The merged phase-space sampler containing snapshots from all workers.
+	xt.Particles
+		The beam at the end of the tracking.
 	"""
 	if record_every is not None and record_every <= 0:
 		raise ValueError("`record_every` must be positive")
