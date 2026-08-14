@@ -17,8 +17,8 @@ def create_multispecies_lines(
 	timestamps: NDArray[np.floating],
 	ions: list[xt.Particles],
 	harmonics: list[int],
-	cavities: list[str],
-	voltage_ramps: list[VoltageProgram],
+	cavities: list[str] | None = None,
+	voltage_ramps: list[VoltageProgram] | None = None,
 ) -> list[xt.Line]:
 	"""
 	Creates 2 beamlines. The first one is set for the first ion, second one is set for the second ion.
@@ -50,13 +50,27 @@ def create_multispecies_lines(
 		Voltage ramps for the corresponding cavities
 	"""
 
+	if (cavities is None) != (voltage_ramps is None):
+		raise ValueError(
+			"`cavities` and `voltage_ramps` must either both be provided"
+			"or both be ommited"
+		)
+
+	if cavities is None:
+		# in this case both cavities and voltage ramps should be `None`
+		cavities = [None] * len(ions)
+		voltage_ramps = [None] * len(ions)
+
 	if not (
 		len(ions)
 		== len(harmonics)
 		== len(cavities)
 		== len(voltage_ramps)
 	):
-		raise ValueError("`ions`, `harmonics`, `cavities`, and `voltage_ramps` must have the same length.")
+		raise ValueError(
+			"`ions`, `harmonics`, `cavities`, and `voltage_ramps`"
+			"must have the same length."
+		)
 
 	if len(timestamps) != len(rigidity):
 		raise ValueError("`timestamps` and `rigidity` must have the same length.")
@@ -83,12 +97,18 @@ def create_multispecies_lines(
 	
 		line.functions['f_rf'] = xt.FunctionPieceWiseLinear(x = timestamps, y = line_frf)
 		line.functions['rf_phase'] = xt.FunctionPieceWiseLinear(x = timestamps, y = line_rf_phase)
-		line.functions['V_rf_ref'] = xt.FunctionPieceWiseLinear(x = voltage_ramp.timestamps, y = voltage_ramp.voltage)
-		
-		line[cavity].absolute_time = False
-		line[cavity].phase = line.functions['rf_phase'](line.ref['t_turn_s'])
-		line[cavity].frequency = line.functions['f_rf'](line.ref['t_turn_s'])
-		line[cavity].voltage = line.functions['V_rf_ref'](line.ref['t_turn_s'])
+
+		if voltage_ramp is not None:
+			line.functions['V_rf_ref'] = xt.FunctionPieceWiseLinear(
+				x = voltage_ramp.timestamps, 
+				y = voltage_ramp.voltage
+			)
+
+		if cavity is not None:
+			line[cavity].absolute_time = False
+			line[cavity].phase = line.functions['rf_phase'](line.ref['t_turn_s'])
+			line[cavity].frequency = line.functions['f_rf'](line.ref['t_turn_s'])
+			line[cavity].voltage = line.functions['V_rf_ref'](line.ref['t_turn_s'])
 
 		lines.append(line)
 		lines_frf.append(line_frf)
@@ -99,15 +119,24 @@ def create_multispecies_lines(
 		for j, (cavity, _f_rf, _phase_rf, voltage_ramp) in enumerate(zip(cavities, lines_frf, lines_rf_phase, voltage_ramps)):
 			if i == j:
 				continue
-			line.functions[f"f_rf_non_ref_{cavity}"] = xt.FunctionPieceWiseLinear(x = timestamps, y = _f_rf)
-			line.functions[f"rf_phase_non_ref_{cavity}"] = xt.FunctionPieceWiseLinear(x = timestamps, y = _phase_rf)
-			line.functions[f"V_rf_ref_non_ref_{cavity}"] = xt.FunctionPieceWiseLinear(x = voltage_ramp.timestamps, y = voltage_ramp.voltage)
+
+			cav_name = cavity if cavity else f"{j}"
 			
-			line.vars[f"{cavity}_on"] = 1
-			line[cavity].absolute_time = False
-			line[cavity].phase = line.functions[f"rf_phase_non_ref_{cavity}"](line.ref['t_turn_s'])
-			line[cavity].frequency = line.functions[f"f_rf_non_ref_{cavity}"](line.ref['t_turn_s'])
-			line[cavity].voltage = line.vars[f"{cavity}_on"] * line.functions[f"V_rf_ref_non_ref_{cavity}"](line.ref['t_turn_s'])
+			line.functions[f"f_rf_non_ref_{cav_name}"] = xt.FunctionPieceWiseLinear(x = timestamps, y = _f_rf)
+			line.functions[f"rf_phase_non_ref_{cav_name}"] = xt.FunctionPieceWiseLinear(x = timestamps, y = _phase_rf)
+
+			if voltage_ramp is not None:
+				line.functions[f"V_rf_ref_non_ref_{cav_name}"] = xt.FunctionPieceWiseLinear(
+					x = voltage_ramp.timestamps, 
+					y = voltage_ramp.voltage
+					)
+
+			if cavity is not None:
+				line.vars[f"{cavity}_on"] = 1
+				line[cavity].absolute_time = False
+				line[cavity].phase = line.functions[f"rf_phase_non_ref_{cavity}"](line.ref['t_turn_s'])
+				line[cavity].frequency = line.functions[f"f_rf_non_ref_{cavity}"](line.ref['t_turn_s'])
+				line[cavity].voltage = line.vars[f"{cavity}_on"] * line.functions[f"V_rf_ref_non_ref_{cavity}"](line.ref['t_turn_s'])
 			
 			
 	return lines
