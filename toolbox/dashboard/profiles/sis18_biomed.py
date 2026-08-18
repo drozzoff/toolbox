@@ -1,6 +1,6 @@
 from __future__ import annotations
 import pandas as pd
-from toolbox.dashboard.profiles.models import DataField, LoadedFile, FileSelection
+from toolbox.dashboard.models import DataField, LoadedFile, FileSelection
 
 
 class SIS18extraction_biomed:

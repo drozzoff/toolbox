@@ -2,7 +2,7 @@ from __future__ import annotations
 import numpy as np
 from functools import partial
 import xtrack as xt
-from toolbox.dashboard.profiles.models import DataField, Ratio, LoadedFile
+from toolbox.dashboard.models import DataField, Ratio, LoadedFile
 from toolbox.dashboard.profiles.sis18_extraction import SIS18extraction
 
 
