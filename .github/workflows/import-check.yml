@@ -26,23 +26,7 @@ jobs:
           python -m pip install .
           python -m pip check
 
-      - name: Import
+      - name: Import check for core modules
         working-directory: ${{ runner.temp }}
         run: |
-          python - <<'PY'
-          import importlib
-          import pkgutil
-
-          import toolbox
-
-          module_names = [
-              module.name
-              for module in pkgutil.walk_packages(toolbox.__path__, prefix = f"{toolbox.__name__}.")
-          ]
-
-          for module_name in module_names:
-              importlib.import_module(module_name)
-              print(f"Imported {module_name}")
-
-          print(f"Successfully imported toolbox and {len(module_names)} submodules")
-          PY
+          python "${{ github.workspace }}/scripts/import_check.py"
