@@ -1,8 +1,7 @@
 from setuptools import setup, find_packages
 
 DEPENDENCIES = [
-	'xtrack',
-	'xobjects'
+	'xsuite',
 	'pandas',
 	'rich',
 	'numpy',
