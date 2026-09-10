@@ -6,8 +6,6 @@ DEPENDENCIES = [
 	'rich',
 	'numpy',
 	'matplotlib',
-	'plotly',
-	'dash',
 	'scikit-learn',
 	'scikit-image',
 	'seaborn',
@@ -29,9 +27,6 @@ setup(
 	license = "MIT",
 	
 	packages = find_packages(include = ["toolbox", "toolbox.*"]),
-	package_data = {
-		'toolbox.dashboard': ["assets/*.css"]
-	},
 	install_requires = DEPENDENCIES,
 	classifiers = [
 		"Intended Audience :: Science/Research",

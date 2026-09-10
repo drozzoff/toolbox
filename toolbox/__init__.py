@@ -1,8 +1,18 @@
+# to remove
 from toolbox.apertures import realign_mad_apertures
-from toolbox.plotting import PlotContext, phase_space_evolution
-from toolbox.phase_space import *
-from toolbox.dashboard_profiles import *
 from toolbox.beamlines import exc_freq_chirp, _remove_inactive_multipoles_fix
+
+# Plotting
+from toolbox.plotting import PlotContext, phase_space_evolution
+
+# Separatrix, Phase space hist
+from toolbox.phase_space import *
+
+# MultiGPU tracking on a cluster
 from toolbox.multigpu import track_multigpu
+
+# SIS18 specific
 from toolbox import SIS18
+
+# Dual beam
 from toolbox.dual_beam import create_multispecies_lines, VoltageProgram

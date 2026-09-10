@@ -2,8 +2,8 @@ from __future__ import annotations
 import numpy as np
 from functools import partial
 import xtrack as xt
-from toolbox.dashboard.models import DataField, Ratio, LoadedFile
-from toolbox.dashboard.profiles.sis18_extraction import SIS18extraction
+from dashboard import DataField, Ratio, LoadedFile
+from toolbox.dashboard_profiles.sis18_extraction import SIS18extraction
 
 
 class SIS18extraction_mixed_beam:
