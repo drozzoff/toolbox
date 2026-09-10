@@ -2,6 +2,7 @@ from setuptools import setup, find_packages
 
 DEPENDENCIES = [
 	'xtrack',
+	'xobjects'
 	'pandas',
 	'rich',
 	'numpy',
@@ -9,7 +10,6 @@ DEPENDENCIES = [
 	'scikit-learn',
 	'scikit-image',
 	'seaborn',
-	'flask-compress',
 	'h5py',
 	'ipython',
 	'ipywidgets',
