@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
 Particle-monitor snapshots can optionally be written to HDF5 by providing `record_every` and `monitor_output_directory`.
 
-**To run calculations on the GPU cluster, one has to use a proper image. Docker images for multi-GPU tracking at GSI HPC cluster are available at dockerhub [drozzoff/xsuite](https://hub.docker.com/r/drozzoff/xsuite). **
+**To run calculations on the GPU cluster, one has to use a proper image. Docker images for multi-GPU tracking at GSI HPC cluster are available at dockerhub [drozzoff/xsuite](https://hub.docker.com/r/drozzoff/xsuite).**
 
 Pull the latest image with:
 ```bash

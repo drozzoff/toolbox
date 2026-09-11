@@ -1,6 +1,5 @@
-# to remove
+# Misc
 from toolbox.misc import *
-from toolbox.beamlines import exc_freq_chirp, _remove_inactive_multipoles_fix
 
 # Plotting
 from toolbox.plotting import PlotContext, phase_space_evolution
