@@ -1,4 +1,4 @@
-name: toolbox import check
+name: import
 
 on:
   push:

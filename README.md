@@ -9,7 +9,7 @@ The package collects tools used in simulation and analysis workflows, including:
 - multi-GPU particle tracking;
 - tune-spectrum analysis;
 - SIS18 BPSK excitation and rigidity ramps;
-- slow-extraction and mixed-beam dashboards;
+- slow-extraction and mixed-beam dashboards; > Requires .[dashboard] installation
 - separatrix and phase-space analysis;
 - multi-species accelerating beamlines;
 - lattice plotting and aperture helpers.
@@ -19,9 +19,9 @@ The package collects tools used in simulation and analysis workflows, including:
 ## Requirements
 
 - Python 3.10 or newer
-- Xsuite/Xtrack
+- Xsuite
 - NumPy, SciPy, and pandas
-- Matplotlib, Plotly, Seaborn, and Dash
+- Matplotlib, Seaborn
 - HDF5 support through `h5py`
 
 Multi-GPU tracking additionally requires an OpenCL-capable environment supported by `xobjects.ContextPyopencl`.
@@ -47,18 +47,96 @@ python -m pip install -e .
 | Area | Public interface |
 |---|---|
 | Multi-GPU tracking | `toolbox.track_multigpu()` |
-| Frequency-chirp exciter | `toolbox.exc_freq_chirp()` |
 | Multi-species lines | `toolbox.create_multispecies_lines()` |
-| Tune analysis | `toolbox.SIS18.parse_tunes()` |
-| BPSK excitation | `toolbox.SIS18.plain_bpsk()`, `toolbox.SIS18.modulated_bpsk()` |
-| SIS18 rigidity ramps | `toolbox.SIS18.get_rigidity_ramp()` |
-| Extraction dashboard | `toolbox.dashboard.Dashboard` |
+| **SIS18**: Tune analysis | `toolbox.SIS18.parse_tunes()` |
+| **SIS18**: BPSK excitation | `toolbox.SIS18.plain_bpsk()`, `toolbox.SIS18.modulated_bpsk()` |
+| **SIS18** rigidity ramps | `toolbox.SIS18.get_rigidity_ramp()` |
+| Slow extraction profiles for `Dashboard` | `toolbox.dashboard_profiles` |
 | Phase-space snapshots | `toolbox.PhaseSpaceSnapshots` |
 | Separatrix analysis | `toolbox.get_stable_limit()`, `toolbox.get_separatrix_vertices()` |
-| Lattice plotting | `toolbox.PlotContext` |
-| Aperture correction | `toolbox.realign_mad_apertures()` |
+| Plot context | `toolbox.PlotContext` |
+| Misc | `toolbox.realign_mad_apertures()` |
 
-## Tune-spectrum analysis
+
+## Multi-GPU tracking
+
+`track_multigpu()` divides an `xtrack.Particles` object between the available OpenCL GPU devices. Each worker constructs its own line and tracking context.
+
+```python
+from toolbox import track_multigpu
+
+tracked_particles = track_multigpu(
+    particles,
+    line_constructor = build_line,
+    num_turns = 100_000,
+    num_gpus = 2,
+    verbose = 1,
+)
+```
+
+Because multiprocessing uses the `spawn` method, `line_constructor` must be a top-level, picklable function. Calls from scripts should be protected with:
+
+```python
+if __name__ == "__main__":
+    ...
+```
+
+Particle-monitor snapshots can optionally be written to HDF5 by providing `record_every` and `monitor_output_directory`.
+
+**To run calculations on the GPU cluster, one has to use a proper image. Docker images for multi-GPU tracking at GSI HPC cluster are available at dockerhub [drozzoff/xsuite](https://hub.docker.com/r/drozzoff/xsuite). **
+
+Pull the latest image with:
+```bash
+    docker pull drozzoff/xsuite:latest-gsihpc
+```
+It includes all the dependencies to run on AMD GPUs and has `xsuite` and `toolbox` pre-installed.
+
+## Dashboard
+
+The `dashboard` can display live newline-delimited JSON received over TCP or load data through a selected SIS18 profile.
+
+requires the optional `[dashboard]` installation:
+
+```bash
+python -m pip install .[dashboard]
+```
+
+Example usage:
+```python
+from dashboard import Dashboard
+from toolbox.dashboard_profiles import SIS18extraction
+
+dashboard = Dashboard(
+    profile = SIS18extraction(start_count_at_turn = 0),
+    host = "127.0.0.1",
+    port = 35235,
+    data_to_monitor = [
+        "intensity",
+        "spill",
+        "spill:accumulated",
+        "ES_septum_losses",
+        "ES_entrance_phase_space",
+    ],
+)
+
+dashboard.start_listener()
+dashboard.run_dash_server()
+```
+
+The TCP listener uses port `35235` in this example. The Dash application is served separately on Dash's default address, normally:
+
+```text
+http://127.0.0.1:8050/
+```
+
+Available profiles include:
+
+- `SIS18extraction` for standard SIS18 slow extraction;
+- `SIS18extraction_mixed_beam` for two-ion tracking;
+- `SIS18extraction_biomed` for IC data from the medical cave.
+
+
+## SIS18 Tune-spectrum analysis
 
 `parse_tunes()` identifies a single spectral peak at each timestamp, fits it with a Gaussian, and filters fits using their weighted R2 score.
 
@@ -106,67 +184,6 @@ signal = plain_bpsk(
 ```
 
 `modulated_bpsk()` additionally applies the SIS18-style amplitude program and returns the maximum peak-to-peak voltage together with the normalized signal.
-
-## Dashboard
-
-The dashboard can display live newline-delimited JSON received over TCP or load data through a selected SIS18 profile.
-
-```python
-from toolbox.dashboard import Dashboard, SIS18extraction
-
-dashboard = Dashboard(
-    profile = SIS18extraction(start_count_at_turn = 0),
-    host = "127.0.0.1",
-    port = 35235,
-    data_to_monitor = [
-        "intensity",
-        "spill",
-        "spill:accumulated",
-        "ES_septum_losses",
-        "ES_entrance_phase_space",
-    ],
-)
-
-dashboard.start_listener()
-dashboard.run_dash_server()
-```
-
-The TCP listener uses port `35235` in this example. The Dash application is served separately on Dash's default address, normally:
-
-```text
-http://127.0.0.1:8050/
-```
-
-Available profiles include:
-
-- `SIS18extraction` for standard SIS18 slow extraction;
-- `SIS18extraction_mixed_beam` for two-ion tracking;
-- `SIS18extraction_biomed` for IC data from the medical cave.
-
-## Multi-GPU tracking
-
-`track_multigpu()` divides an `xtrack.Particles` object between the available OpenCL GPU devices. Each worker constructs its own line and tracking context.
-
-```python
-from toolbox import track_multigpu
-
-tracked_particles = track_multigpu(
-    particles,
-    line_constructor = build_line,
-    num_turns = 100_000,
-    num_gpus = 2,
-    verbose = 1,
-)
-```
-
-Because multiprocessing uses the `spawn` method, `line_constructor` must be a top-level, picklable function. Calls from scripts should be protected with:
-
-```python
-if __name__ == "__main__":
-    ...
-```
-
-Particle-monitor snapshots can optionally be written to HDF5 by providing `record_every` and `monitor_output_directory`.
 
 ## Phase-space and separatrix tools
 
