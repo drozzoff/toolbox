@@ -16,6 +16,12 @@ DEPENDENCIES = [
 	'tqdm',
 ]
 
+OPTIONAL_DEPENDENCIES = {
+	"dashboard": [
+		"profile-dashboard @ git+https://github.com/drozzoff/dashboard.git",
+	],
+}
+
 setup(
 	name = "toolbox",
 	version = "0.0.1",
@@ -27,6 +33,7 @@ setup(
 	
 	packages = find_packages(include = ["toolbox", "toolbox.*"]),
 	install_requires = DEPENDENCIES,
+	extras_require = OPTIONAL_DEPENDENCIES,
 	classifiers = [
 		"Intended Audience :: Science/Research",
 		"License :: OSI Approved :: MIT License",

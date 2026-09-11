@@ -30,3 +30,13 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           python "${{ github.workspace }}/scripts/import_check.py"
+
+      - name: Install with extras
+        run: |
+          python -m pip install ".[dashboard]"
+          python -m pip check
+      
+      - name: Import check for dashboard modules
+        working-directory: ${{ runner.temp }}
+        run: |
+          python "${{ github.workspace }}/scripts/extra_import_check.py"
