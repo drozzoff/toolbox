@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -59,6 +60,23 @@ class PlotContextStateTests(unittest.TestCase):
 		self.context.commit()
 
 		self.assertEqual(self.context.main_subplot.get_xlim(), initial_xlim)
+
+	def test_constructor_does_not_register_figure_for_notebook_auto_display(self):
+		was_interactive = plt.isinteractive()
+		plt.ion()
+		try:
+			with patch("toolbox.plotting.is_notebook", return_value = True):
+				context = PlotContext(
+					style = self.style_file.name,
+					show_survey = False,
+					show_apertures = False,
+				)
+
+			self.assertTrue(plt.isinteractive())
+			self.assertFalse(plt.fignum_exists(context.fig.number))
+		finally:
+			plt.close(context.fig)
+			plt.interactive(was_interactive)
 
 
 if __name__ == "__main__":
