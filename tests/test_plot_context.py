@@ -65,7 +65,7 @@ class PlotContextStateTests(unittest.TestCase):
 		was_interactive = plt.isinteractive()
 		plt.ion()
 		try:
-			with patch("toolbox.plotting.is_notebook", return_value = True):
+			with patch("toolbox.visualisation.plotcontext.is_notebook", return_value = True):
 				context = PlotContext(
 					style = self.style_file.name,
 					show_survey = False,
