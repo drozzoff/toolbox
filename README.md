@@ -55,7 +55,7 @@ python -m pip install -e .
 | Slow extraction profiles for `Dashboard` | `toolbox.dashboard_profiles` |
 | Phase-space snapshots | `toolbox.PhaseSpaceSnapshots` |
 | Separatrix analysis | `toolbox.get_stable_limit()`, `toolbox.get_separatrix_vertices()` |
-| Plot context | `toolbox.PlotContext` |
+| Plot context | `toolbox.visualisation.PlotContext` |
 | Misc | `toolbox.realign_mad_apertures()` |
 
 
@@ -91,6 +91,23 @@ Pull the latest image with:
     docker pull drozzoff/xsuite:latest-gsihpc
 ```
 It includes all the dependencies to run on AMD GPUs and has `xsuite` and `toolbox` pre-installed.
+
+## Visualisation
+The `PlotContext` class provides a context manager for plotting the data as a function of `s`.
+Depending on the parameters, it can also add the apertures of the elements and line structure that looks similar to the MAD-X twiss visualisation.
+
+```python
+    from toolbox.visualisation import PlotContext
+
+    plot_context = tb.visualisation.PlotContext(
+        line = sis18ring,
+        show_apertures = True,
+        show_survey = True
+    )
+
+    with plot_context as cxt:
+        cxt.add_plot(np.linspace(0, 200), 0.05 * np.sin(np.linspace(0, 200)))
+```
 
 ## Dashboard
 
