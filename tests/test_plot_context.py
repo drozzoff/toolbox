@@ -6,7 +6,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from toolbox.plotting import PlotContext
+from toolbox.visualisation import PlotContext
 
 
 class PlotContextStateTests(unittest.TestCase):

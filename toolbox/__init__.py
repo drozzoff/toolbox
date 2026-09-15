@@ -1,8 +1,8 @@
 # Misc
 from toolbox.misc import *
 
-# Plotting
-from toolbox.plotting import PlotContext, phase_space_evolution
+# Visualisation tools
+from toolbox import visualisation
 
 # Separatrix, Phase space hist
 from toolbox.phase_space import *
