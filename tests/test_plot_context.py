@@ -1,9 +1,7 @@
 import json
 import tempfile
 import unittest
-
 import matplotlib
-
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 

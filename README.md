@@ -1,6 +1,7 @@
 # toolbox
 
 [![import](https://github.com/drozzoff/toolbox/actions/workflows/import-check.yml/badge.svg)](https://github.com/drozzoff/toolbox/actions/workflows/import-check.yml)
+[![tests](https://github.com/drozzoff/toolbox/actions/workflows/tests.yml/badge.svg)](https://github.com/drozzoff/toolbox/actions/workflows/tests.yml)
 
 Research utilities built around [Xsuite](https://xsuite.readthedocs.io/) for SIS18 beam dynamics, slow extraction, tracking, diagnostics, and visualization.
 
