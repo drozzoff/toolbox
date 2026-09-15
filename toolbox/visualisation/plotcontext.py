@@ -320,42 +320,7 @@ class PlotContext:
 				
 				base_name = name.replace('_aper', '')
 				length = get_thick_element_length(self.line, base_name)
-
-				if base_name == "gs04me1e":
-					# Custom plotting for the septum
-					es_angle = kwargs.get('es_angle', -7.4e-3)
-					polygon = Polygon([
-						[s, -0.055], 
-						[s + length, -0.055 + length * es_angle],
-						[s + length, -self.config['Aperture']['Beampipe']['x']], 
-						[s, -self.config['Aperture']['Beampipe']['x']]], 
-						color = "black", 
-						linewidth = 1.0
-					)
-					self.main_subplot.add_patch(polygon)
-					self.aperture_artists.append(polygon)
-			
-					if element.max_x > self.config['Aperture']['Rectangular']['limit_x']:
-						curve, = self.main_subplot.plot(
-							[s, s + length], 
-							[self.config['Aperture']['Beampipe']['x'], self.config['Aperture']['Beampipe']['x']], 
-							'-', 
-							color = "black"
-						)
-						self.aperture_artists.append(curve)
-					else:
-						rectangle = Rectangle(
-							(s, self.config['Aperture']['Beampipe']['x']), 
-							length, 
-							element.max_x - self.config['Aperture']['Beampipe']['x'], 
-							color = "black", 
-							linewidth = 1.0
-						)
-						self.main_subplot.add_patch(rectangle)
-						self.aperture_artists.append(rectangle)
-					
-					continue
-
+				
 				if element.min_x < -self.config['Aperture']['Rectangular']['limit_x']:
 					curve, = self.main_subplot.plot(
 						[s, s + length], 
