@@ -98,31 +98,32 @@ Depending on the parameters, it can also add the apertures of the elements and l
 
 An example usage is shown below.
 ```python
-    from toolbox.visualisation import PlotContext
+from toolbox.visualisation import PlotContext
 
-    plot_context = tb.visualisation.PlotContext(
-        line = sis18ring,
-        show_apertures = True,
-        show_survey = True
-    )
+plot_context = tb.visualisation.PlotContext(
+    line = sis18ring,
+    show_apertures = True,
+    show_survey = True
+)
 
-    with plot_context as cxt:
-        cxt.add_plot(np.linspace(0, 200), 0.05 * np.sin(np.linspace(0, 200)), color = "orange")
+with plot_context as cxt:
+    cxt.add_plot(np.linspace(0, 200), 0.05 * np.sin(np.linspace(0, 200)), color = "orange")
 
-        cxt.main_subplot.set_ylim(-0.12, 0.12)
-        cxt.main_subplot.set_xlabel("s [m]")
-        cxt.main_subplot.set_ylabel("x [m]")
+    cxt.main_subplot.set_ylim(-0.12, 0.12)
+    cxt.main_subplot.set_xlabel("s [m]")
+    cxt.main_subplot.set_ylabel("x [m]")
 
-        cxt.fig.savefig("plotcontext_ex.png")
+    cxt.fig.savefig("plotcontext_ex.png")
 ```
 This will produce the plot.
-![PlotContext showing data, apertures, and lattice elements](docs/images/plotcontext.png)
+![PlotContext showing data, apertures, and lattice elements](docs/images/plotcontext_example.png)
 
 ## Dashboard
 
-The `dashboard` can display live newline-delimited JSON received over TCP or load data through a selected SIS18 profile.
+The `Dashboard` can display live newline-delimited JSON received over TCP or load data through a selected SIS18 profile.
+It uses [dashboard](https://github.com/drozzoff/dashboard) for the web interface and [dash](https://dash.plotly.com/) for the visualization.
 
-requires the optional `[dashboard]` installation:
+`toolbox` requires the optional `[dashboard]` installation:
 
 ```bash
 python -m pip install .[dashboard]
