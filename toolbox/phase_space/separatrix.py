@@ -189,7 +189,6 @@ def get_stable_limit(
 		)
 		iterations_data['jx_diff'].append(jx_diff)
 		
-		shrinkage_strength = kwargs.get("shrinkage_strength", "max")
 		if shrinkage_strength == "max":
 			test_range[0] = x_test[particle_id_stable - 1]
 			test_range[1] = x_test[particle_id_stable]

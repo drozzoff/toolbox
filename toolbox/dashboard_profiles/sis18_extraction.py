@@ -454,7 +454,7 @@ class SIS18extraction:
 			start_count_at_turn = self.start_count_at_turn
 
 		if isinstance(particles, str):
-			particles = self.read_file(particles)
+			particles = self.read_file(particles).data
 
 		max_turns = max(particles.at_turn)
 		turns_list = list(range(1, max_turns + 1))
