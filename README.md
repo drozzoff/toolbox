@@ -96,6 +96,7 @@ It includes all the dependencies to run on AMD GPUs and has `xsuite` and `toolbo
 The `PlotContext` class provides a context manager for plotting the data as a function of `s`.
 Depending on the parameters, it can also add the apertures of the elements and line structure that looks similar to the MAD-X twiss visualisation.
 
+An example usage is shown below.
 ```python
     from toolbox.visualisation import PlotContext
 
@@ -106,8 +107,16 @@ Depending on the parameters, it can also add the apertures of the elements and l
     )
 
     with plot_context as cxt:
-        cxt.add_plot(np.linspace(0, 200), 0.05 * np.sin(np.linspace(0, 200)))
+        cxt.add_plot(np.linspace(0, 200), 0.05 * np.sin(np.linspace(0, 200)), color = "orange")
+
+        cxt.main_subplot.set_ylim(-0.12, 0.12)
+        cxt.main_subplot.set_xlabel("s [m]")
+        cxt.main_subplot.set_ylabel("x [m]")
+
+        cxt.fig.savefig("plotcontext_ex.png")
 ```
+This will produce the plot.
+![PlotContext showing data, apertures, and lattice elements](docs/images/plotcontext.png)
 
 ## Dashboard
 
