@@ -1,0 +1,57 @@
+{
+	"Figure_size": {
+		"width": 10.0,
+		"height": 5.0
+	},
+	"Aperture": {
+		"Beampipe": {
+			"x": 0.1,
+			"y": 0.1
+		},
+		"Rectangular": {
+			"color": "black",
+			"limit_x": 0.15,
+			"limit_y": 0.15
+		},
+		"Elliptical": {
+			"color": "grey"
+		}
+	},
+	"Survey": {
+		"ElementsToPlot": ["Quadrupole", "Sextupole", "Bend"],
+		"Height": 1.0,
+		"y_min": -1.0,
+		"y_max": 1.0,
+		"ElementStyles": {
+			"Quadrupole": {
+				"height": 1.0,
+				"orientation": true,
+				"color": "red"
+			},
+			"Bend": {
+				"height": 1.5,
+				"orientation": false,
+				"color": "blue"
+			},
+			"Sextupole": {
+				"height": 0.5,
+				"orientation": true,
+				"color": "green"
+			},
+			"Cavity": {
+				"height": 0.75,
+				"orientation": false,
+				"color": "grey"
+			},
+			"Collimator": {
+				"height": 0.1,
+				"color": "black"
+			},
+			"Default": {
+				"height": 0.5,
+				"orientation": false,
+				"color": "grey"
+			}
+		}
+	}
+}

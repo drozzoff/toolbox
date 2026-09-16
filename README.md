@@ -88,7 +88,7 @@ Particle-monitor snapshots can optionally be written to HDF5 by providing `recor
 
 Pull the latest image with:
 ```bash
-    docker pull drozzoff/xsuite:latest-gsihpc
+docker pull drozzoff/xsuite:latest-gsihpc
 ```
 It includes all the dependencies to run on AMD GPUs and has `xsuite` and `toolbox` pre-installed.
 

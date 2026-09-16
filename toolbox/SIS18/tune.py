@@ -189,7 +189,7 @@ def parse_tunes(
 	noise_width: float = 3, # in sigmas
 	peak_min_length: int = 3, # in bins
 	post_dilation: int = 3, # radius of dilation in bins for the fit
-	weights_func: callable = lambda x: x, # weights function for the fit
+	weights_func: callable = lambda x, noise_sigma: x, # weights function for the fit
 	r2_score_cut = 0.75, # better fits survive
 	verbose: int = 0 # control the data printed
 	) -> pd.DataFrame:
@@ -204,7 +204,7 @@ def parse_tunes(
 		'error': []
 	}
 
-	for timestamp in tqdm(data.index):
+	for timestamp in tqdm.tqdm(data.index):
 		row = data.loc[timestamp]
 		note = None
 		

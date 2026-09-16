@@ -90,7 +90,7 @@ class PhaseSpaceSnapshots:
 		with h5py.File(filename, "r") as f:
 			portions = f["portions"]
 
-			for portion_name in tqdm(portions):
+			for portion_name in tqdm.tqdm(portions):
 				group = portions[portion_name]
 
 				turns = group["turns"]
@@ -138,7 +138,7 @@ class PhaseSpaceSnapshots:
 
 		np.testing.assert_array_equal(self.x_edges, other.x_edges)
 		np.testing.assert_array_equal(self.px_edges, other.px_edges)
-		np.testing.assert_array_equal(self.turns, other.turn)
+		np.testing.assert_array_equal(self.turns, other.turns)
 
 		if len(self.histograms) != len(other.histograms):
 			raise ValueError("Number of snapshots does not match.")

@@ -32,6 +32,7 @@ setup(
 	license = "MIT",
 	
 	packages = find_packages(include = ["toolbox", "toolbox.*"]),
+	package_data = {"toolbox.visualisation": ["default_style.json"]},
 	install_requires = DEPENDENCIES,
 	extras_require = OPTIONAL_DEPENDENCIES,
 	classifiers = [

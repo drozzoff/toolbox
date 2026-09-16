@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import json
 from matplotlib.gridspec import GridSpec
-from matplotlib.patches import Rectangle, Polygon
+from importlib.resources import files
+from matplotlib.patches import Rectangle
 import numpy as np
 from rich.console import Console
 import xtrack as xt
@@ -76,7 +77,7 @@ class PlotContext:
 		*,
 		show_apertures: bool = True,
 		show_survey: bool = True,
-		style: str = "style.json",	
+		style: str | None = None,
 		):
 		"""
 		Paremeters
@@ -93,9 +94,16 @@ class PlotContext:
 		self.in_notebook = is_notebook()
 
 		with plt.ioff():
-			with open(style) as f:
-				self.config = json.load(f)
-			
+			if style is None:
+				resource = files("toolbox.visualisation").joinpath("default_style.json")
+
+				with resource.open("r", encoding = "utf-8") as f:
+					self.config = json.load(f)
+
+			else:
+				with open(style, encoding = 'utf-8') as f:
+					self.config = json.load(f)
+				
 			self.fig = plt.figure(
 				figsize = (self.config['Figure_size']['width'], self.config['Figure_size']['height'])
 			)

@@ -7,11 +7,11 @@ def generate_bpsk(
 	f0: float, 
 	timestamps: NDArray[np.floating],
 	chip_rate: float,
-	**kwargs
+	*,
+	seed: int | None = None
 	) -> NDArray[np.float32]:
-	
-	if "seed" in kwargs:
-		np.random.default_rng(kwargs.get("seed"))
+
+	rng = np.random.default_rng(seed)
 	
 	timestep = timestamps[1] - timestamps[0]
 	duration = timestamps[-1] - timestamps[0]
@@ -25,7 +25,7 @@ def generate_bpsk(
 	if n_chips == 1:
 		raise ValueError(f"Number of chips is too low! Increase the signal duration or the chirp_rate.")
 	
-	chip_values = np.random.choice([-1, 1], size = n_chips)
+	chip_values = rng.choice([-1, 1], size = n_chips)
 	chip_length = int(1 / (timestep * chip_rate))
 	modulation = np.repeat(chip_values, chip_length)[:n_samples]
 
@@ -72,7 +72,8 @@ def plain_bpsk(
 	Qx_bandwidth: float,
 	timestamps: NDArray[np.floating],
 	filename: str | None = None,
-	verbose: int = 0
+	verbose: int = 0,
+	seed: int | None = None
 	) -> NDArray[np.float32]:
 	"""
 	Plain RBPSK signal, with normalized amplitude.
@@ -91,6 +92,8 @@ def plain_bpsk(
 		If provided, the location to save the signal
 	verbose
 		If other than 0 (default = 0) prints some info
+	seed
+		Seed number
 
 	Returns
 	-------
@@ -111,7 +114,8 @@ def plain_bpsk(
 	signal = generate_bpsk(
 		f0 = excitation_frequency,
 		timestamps = timestamps,
-		chip_rate = chip_rate
+		chip_rate = chip_rate,
+		seed = seed
 	)
 	if filename:
 		np.save(filename, signal)
@@ -131,7 +135,8 @@ def modulated_bpsk(
 	timestamps: NDArray[np.floating],
 	instant_ramp: bool = False,
 	filename: str | None = None,
-	verbose: int = 0
+	verbose: int = 0,
+	seed: int | None = None
 	) -> tuple[float, NDArray[np.float32]]:
 	"""
 	Amplitude modulated RBPSK. The same way it is implemented in SIS18 control.
@@ -162,7 +167,9 @@ def modulated_bpsk(
 		If provided, the location to save the signal
 	verbose
 		If other than 0 (default = 0) prints some info
-
+	seed
+		Seed number
+		
 	Returns
 	-------
 	tuple[float, NDArray[np.float32]]
@@ -173,7 +180,8 @@ def modulated_bpsk(
 		Qx = Qx,
 		Qx_bandwidth = 	Qx_bandwidth,
 		timestamps = timestamps,
-		verbose = verbose
+		verbose = verbose,
+		seed = seed
 	)
 	
 	amplitude_modulation_func = partial(

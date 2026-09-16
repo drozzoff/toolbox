@@ -203,7 +203,7 @@ def get_stable_limit(
 			progress_current = min(1, get_progress(test_range[1] - test_range[0])) * 100 # in %
 			progress.update(progress_current - progress_init) 
 	
-		progress_init = progress_current
+			progress_init = progress_current
 
 		iter_id += 1
 	
