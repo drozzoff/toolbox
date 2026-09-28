@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Bug fixes in `toolbox.dashboard_profiles`
 - `toolbox.visualisation.Plotcontext` now can plot vertical apertures too.
 - `toolbox.realign_mad_apertures()` now realigns vertical rectangular apertures too.
 
