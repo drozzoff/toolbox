@@ -273,7 +273,7 @@ def ion_spill_callback(dashboard: Dashboard, ion_key = 1, start_count_at_turn: i
 
 	ion_losses_at_turn = np.bincount(
 		ion_survived_inside_septum_at_turn,
-		minlength = end_turn - start_turn
+		minlength = end_turn - start_turn + 1
 	)
 
 	dashboard.data_buffer[f'spill:ion{ion_key}'].extend(ion_losses_at_turn, batch_id = dashboard.current_batch_id)
@@ -343,4 +343,3 @@ def accumulated_spill_layout(fig: go.Figure, *, title: str = "Accumulated spill"
 		height = 700,
 		showlegend = True
 	)
-

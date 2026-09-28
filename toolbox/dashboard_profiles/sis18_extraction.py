@@ -553,7 +553,7 @@ def ES_inside_losses_callback(dashboard: Dashboard, start_count_at_turn: int = 0
 	
 	losses_at_turn = np.bincount(
 		lost_inside_septum_at_turn,
-		minlength = end_turn - start_turn
+		minlength = end_turn - start_turn + 1
 	)
 	dashboard.data_buffer['ES_septum_losses:inside'].extend(losses_at_turn, batch_id = dashboard.current_batch_id)
 
