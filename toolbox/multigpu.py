@@ -326,27 +326,42 @@ def track_multigpu(
 	if record_every is not None and monitor_output_directory is None:
 		raise ValueError("`monitor_output_directory` is required when recording")
 
-	t0 = time.time()
+	if num_turns <= 0:
+		raise ValueError(f"Number of turns should be positive, got {num_turns}")
 
-	mp.set_start_method("spawn", force = True)
+	t0 = time.time()
 
 	devices = xo.ContextPyopencl.get_devices()
 	
 	num_gpus_available = len(devices)
 	if num_gpus_available < num_gpus:
-		warnings.warn(f"Requested {num_gpus} GPUs but only {num_gpus_available} are available. Using {num_gpus_available} GPUs for the tracking")
+		warnings.warn(
+			f"Requested {num_gpus} GPUs but only {num_gpus_available} are available."
+			f" Using {num_gpus_available} GPUs for the tracking"
+		)
 		num_gpus = num_gpus_available
 
+	if num_gpus <= 0:
+		raise ValueError(f"No GPUs requested/available.")
+
 	devices = devices[:num_gpus]
+
+	context = mp.get_context("spawn")
 	
 	tmp_folder = tempfile.TemporaryDirectory()
 	temp_folder = tmp_folder.name
 
-	log_main(t0, "Start up", verbose = verbose)
-
 	if isinstance(particles, str):
 		with open(particles, 'rb') as fid:
 			particles = xt.Particles.from_dict(pk.load(fid))
+
+	if particles._capacity < num_gpus:
+		raise ValueError(
+			f"Number of particles ({particles._capacity}) is smaller than number of"
+			f" GPUs requested ({num_gpus})"
+		)
+
+	log_main(t0, "Start up", verbose = verbose)
 	
 	# splitting and saving the beam into chunks
 	ranges = split_indices(particles._capacity, num_gpus)
@@ -362,7 +377,7 @@ def track_multigpu(
 	log_main(t0, "Saved the beam in the memory", verbose = verbose)
 
 	for device, (i0, i1) in zip(devices, ranges):
-		p = mp.Process(
+		p = context.Process(
 			target = worker,
 			args = (
 				line_constructor, 
