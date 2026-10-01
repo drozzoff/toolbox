@@ -136,8 +136,6 @@ from toolbox.dashboard_profiles import SIS18extraction
 
 dashboard = Dashboard(
     profile = SIS18extraction(start_count_at_turn = 0),
-    host = "127.0.0.1",
-    port = 35235,
     data_to_monitor = [
         "intensity",
         "spill",
@@ -147,11 +145,10 @@ dashboard = Dashboard(
     ],
 )
 
-dashboard.start_listener()
 dashboard.run_dash_server()
 ```
 
-The TCP listener uses port `35235` in this example. The Dash application is served separately on Dash's default address, normally:
+The TCP listener by default sits at `http://127.0.0.1:35235/`. The Dash application is served separately on Dash's default address, normally:
 
 ```text
 http://127.0.0.1:8050/

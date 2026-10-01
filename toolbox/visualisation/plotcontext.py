@@ -78,6 +78,7 @@ class PlotContext:
 		show_apertures: bool = True,
 		show_survey: bool = True,
 		style: str | None = None,
+		plane: str = 'x'
 		):
 		"""
 		Paremeters
@@ -90,8 +91,15 @@ class PlotContext:
 			Display the survey on top of the plot or not.
 		style
 			Path to the style file.
+		plane
+			Aperture plane to visualize: "x" or "y". Defaults to "x".
 		"""
 		self.in_notebook = is_notebook()
+
+		if plane not in ('x', 'y'):
+			raise ValueError(f"plane: Unsupported values, only 'x', 'y' are supported, got {plane}")
+
+		self.plane = plane
 
 		with plt.ioff():
 			if style is None:
@@ -218,7 +226,7 @@ class PlotContext:
 		)
 
 		self.survey_artists.append(curve)
-		
+
 		self.survey_subplot.set_ylim(self.config['Survey']['y_min'], self.config['Survey']['y_max'])
 		for s, element in zip(self.line.get_table().s, self.line.elements):
 			elem_type = element.__class__.__name__
@@ -260,7 +268,7 @@ class PlotContext:
 		Plot the aperture and save it to use as a background later.
 		"""
 		elliptic_aper_cache = {'s_up': [], 'aper_up': [], 's_down': [], 'aper_down': [], 'is_empty': True}
-		
+
 		self.aperture_artists = []
 
 		for i, name in enumerate(self.line.element_names):
@@ -271,7 +279,7 @@ class PlotContext:
 				# that means the name of the element the this aperture
 				# belongs is
 				base_name = name.replace('_aper', '')
-		
+
 				# exctracting the element and any associated drifts
 				length = get_thick_element_length(self.line, base_name)
 
@@ -280,15 +288,17 @@ class PlotContext:
 					elliptic_aper_cache['s_up'].append(s)
 					elliptic_aper_cache['s_down'].append(s)
 					
-					elliptic_aper_cache['aper_up'].append(self.config['Aperture']['Beampipe']['x'])
-					elliptic_aper_cache['aper_down'].append(-self.config['Aperture']['Beampipe']['x'])
-				
+					elliptic_aper_cache['aper_up'].append(self.config['Aperture']['Beampipe'][self.plane])
+					elliptic_aper_cache['aper_down'].append(-self.config['Aperture']['Beampipe'][self.plane])
+
 				# while the aperture is elliptic, filling up the dict
 				elliptic_aper_cache['s_up'].extend([s, s + length])
 				elliptic_aper_cache['s_down'].extend([s, s + length])
 
-				elliptic_aper_cache['aper_up'].extend([element.a, element.a])
-				elliptic_aper_cache['aper_down'].extend([-element.a, -element.a])
+				val = element.a if self.plane == 'x' else element.b
+
+				elliptic_aper_cache['aper_up'].extend([val, val])
+				elliptic_aper_cache['aper_down'].extend([-val, -val])
 
 				elliptic_aper_cache['is_empty'] = False   
 							
@@ -303,8 +313,8 @@ class PlotContext:
 					elliptic_aper_cache['s_up'].append(elliptic_aper_cache['s_up'][-1])
 					elliptic_aper_cache['s_down'].append(elliptic_aper_cache['s_down'][-1])
 					
-					elliptic_aper_cache['aper_up'].append(self.config['Aperture']['Beampipe']['x'])
-					elliptic_aper_cache['aper_down'].append(-self.config['Aperture']['Beampipe']['x'])
+					elliptic_aper_cache['aper_up'].append(self.config['Aperture']['Beampipe'][self.plane])
+					elliptic_aper_cache['aper_down'].append(-self.config['Aperture']['Beampipe'][self.plane])
 					
 					curve_up, = self.main_subplot.plot(
 						elliptic_aper_cache['s_up'], 
@@ -328,39 +338,39 @@ class PlotContext:
 				
 				base_name = name.replace('_aper', '')
 				length = get_thick_element_length(self.line, base_name)
-				
-				if element.min_x < -self.config['Aperture']['Rectangular']['limit_x']:
+
+				if getattr(element, f"min_{self.plane}") < -self.config['Aperture']['Rectangular'][f"limit_{self.plane}"]:
 					curve, = self.main_subplot.plot(
 						[s, s + length], 
-						[-self.config['Aperture']['Beampipe']['x'], -self.config['Aperture']['Beampipe']['x']], 
+						[-self.config['Aperture']['Beampipe'][self.plane], -self.config['Aperture']['Beampipe'][self.plane]], 
 						'-', 
 						color = "black"
 					)
 					self.aperture_artists.append(curve)
 				else:
 					rectangle = Rectangle(
-						(s, -self.config['Aperture']['Beampipe']['x']), 
+						(s, -self.config['Aperture']['Beampipe'][self.plane]), 
 						length, 
-						element.min_x + self.config['Aperture']['Beampipe']['x'], 
+						getattr(element, f"min_{self.plane}") + self.config['Aperture']['Beampipe'][self.plane], 
 						color = "black", 
 						linewidth = 1.0
 					)
 					self.main_subplot.add_patch(rectangle)
 					self.aperture_artists.append(rectangle)
 
-				if element.max_x > self.config['Aperture']['Rectangular']['limit_x']:
+				if getattr(element, f"max_{self.plane}") > self.config['Aperture']['Rectangular'][f"limit_{self.plane}"]:
 					curve, = self.main_subplot.plot(
 						[s, s + length], 
-						[self.config['Aperture']['Beampipe']['x'], self.config['Aperture']['Beampipe']['x']], 
+						[self.config['Aperture']['Beampipe'][self.plane], self.config['Aperture']['Beampipe'][self.plane]], 
 						'-', 
 						color = "black"
 					)
 					self.aperture_artists.append(curve)
 				else:
 					rectangle = Rectangle(
-						(s, self.config['Aperture']['Beampipe']['x']), 
+						(s, self.config['Aperture']['Beampipe'][self.plane]), 
 						length, 
-						element.max_x - self.config['Aperture']['Beampipe']['x'], 
+						getattr(element, f"max_{self.plane}") - self.config['Aperture']['Beampipe'][self.plane], 
 						color = "black", 
 						linewidth = 1.0
 					)
@@ -372,8 +382,8 @@ class PlotContext:
 					elliptic_aper_cache['s_up'].append(elliptic_aper_cache['s_up'][-1])
 					elliptic_aper_cache['s_down'].append(elliptic_aper_cache['s_down'][-1])
 					
-					elliptic_aper_cache['aper_up'].append(self.config['Aperture']['Beampipe']['x'])
-					elliptic_aper_cache['aper_down'].append(-self.config['Aperture']['Beampipe']['x'])
+					elliptic_aper_cache['aper_up'].append(self.config['Aperture']['Beampipe'][self.plane])
+					elliptic_aper_cache['aper_down'].append(-self.config['Aperture']['Beampipe'][self.plane])
 					
 					curve_up, = self.main_subplot.plot(
 						elliptic_aper_cache['s_up'], 
