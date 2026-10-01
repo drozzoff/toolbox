@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 01-10-2026
+
 ### Changed
 
 - Bug fixes in `toolbox.dashboard_profiles`
