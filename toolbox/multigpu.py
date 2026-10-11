@@ -120,6 +120,7 @@ def worker(
 	folder: str,
 	verbose: int = 0,
 	record_every: int | None = None,
+	checkpoint_every: int | None = None,
 	monitor_budget: int | None = None
 	):
 	"""
@@ -148,6 +149,10 @@ def worker(
 		If `varbose > 1` prints the output from the worker
 	record_every
 		If provided will record the coordinates with `xt.ParticlesMonitor`
+	checkpoint_every
+		If provided, saves the particles object from the worker every given number of
+		turns into the user space. Could be used as backup option, when the tracking
+		can be interrupted.
 	monitor_budget
 		Memory budget in bytes for the memory the `xt.ParticlesMonitor` is
 		allowed to occupy.
