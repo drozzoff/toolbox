@@ -44,10 +44,25 @@ def save_monitor_portion(
 	num_snapshots: int
 	):
 	"""
-	Dumps `xt.ParticlesMonitor` data into an existing `"h5"` file. Saves 6d phase 
-	space along with `at_turn` and `state`. Since its possible the tracking 
-	on the gpu is split into multiple chunks of turns to keep the memory below 
-	the limit, multiple monitors might be used to dump the data for 1 gpu.
+	Dumps `xt.ParticlesMonitor` data into an existing `"h5"` file. Saves the following
+	particles info into HDF5 file:
+	```python
+	{
+		"particle_id",
+		"x",
+		"px",
+		"y",
+		"py",
+		"zeta",
+		"delta",
+		"at_turn",
+		"at_element",
+		"state"
+	}
+	```
+	Since its possible the tracking on the gpu is split into multiple chunks 
+	of turns to keep the memory below the limit, multiple monitors might be used 
+	to dump the data for 1 gpu.
 
 	Parameters
 	----------
@@ -72,7 +87,13 @@ def save_monitor_portion(
 
 	group.create_dataset("turns", data = turns)
 
-	for field in ("x", "px", "y", "py", "zeta", "delta", "state"):
+	_fields = (
+		"particle_id", 
+		"x", "px", "y", "py", "zeta", "delta", 
+		"at_turn", "at_element", "state"
+	)
+
+	for field in _fields:
 		context_array = getattr(monitor, field)
 
 		host_array = context.nparray_from_context_array(context_array)[..., 0]
@@ -108,9 +129,9 @@ def worker(
 
 	The limit is either given as an argument or is set based on the rule of thumb:
 	```python
-		monitor_budget = min(
-		int(0.20 * device.global_mem_size),
-		int(0.80 * device.max_mem_alloc_size)
+	monitor_budget = min(
+	int(0.20 * device.global_mem_size),
+	int(0.80 * device.max_mem_alloc_size)
 	)
 
 	Parameters
