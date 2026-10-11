@@ -121,7 +121,8 @@ def worker(
 	verbose: int = 0,
 	record_every: int | None = None,
 	checkpoint_every: int | None = None,
-	monitor_budget: int | None = None
+	monitor_budget: int | None = None,
+	checkpoints_folder: str | None = None
 	):
 	"""
 	If `record_every` is provided, the worker uses `xt.ParticlesMonitor` to
@@ -135,6 +136,10 @@ def worker(
 	int(0.80 * device.max_mem_alloc_size)
 	)
 
+	When `checkpoint_every` is specified, dumps the `Particles` object back to the user 
+	specified fodler every `checkpoint_every` number of turns. Its purpose is to provide a
+	backup option if the tracking fails for some reason.
+
 	Parameters
 	----------
 	build_line
@@ -144,7 +149,8 @@ def worker(
 	num_turns
 		Number of turns to track the particles for
 	folder
-		Name of the folder to read/write the particles' data
+		Name of the folder to read/write the particles' data. Typically is temporarily
+		created folder
 	verbose
 		If `varbose > 1` prints the output from the worker
 	record_every
@@ -152,11 +158,14 @@ def worker(
 	checkpoint_every
 		If provided, saves the particles object from the worker every given number of
 		turns into the user space. Could be used as backup option, when the tracking
-		can be interrupted.
+		can be interrupted. 
+		**`checkpoint_every` is expected to be a multiple of `record_every`**.
 	monitor_budget
 		Memory budget in bytes for the memory the `xt.ParticlesMonitor` is
 		allowed to occupy.
-		
+	checkpoints_folder
+		Folder on the user side to store the latest checkpoint of the tracked `Particles`
+		object. Is required when `checkpoint_every` is specified.	
 	"""
 	t0 = time.time()
 
@@ -184,6 +193,10 @@ def worker(
 
 	log_worker(t0, device, "Created particle beam", verbose = verbose)
 
+	# defines the length of tracking in terms of turns that satisfies both 
+	# `record_every` and `checkpoint_every`
+	turns_budget = None
+
 	if record_every:
 		if monitor_budget is None:
 			monitor_budget = min(
@@ -200,6 +213,7 @@ def worker(
 
 		particle_id_range = beam_chunk.get_active_particle_id_range()
 
+		# number of snapshots that can be done for the specified budget 
 		snapshots_budget = monitor_budget // bytes_per_snapshot
 
 		if snapshots_budget < 1:
@@ -208,7 +222,26 @@ def worker(
 				f"The monitor budget of {monitor_budget / 2**30:.2f} GiB"
 			)
 
+		# number of turns that fit into the specified monitor budget
 		turns_budget = snapshots_budget * record_every
+
+	# refining the turns_budget when the `checkpoint_every` is specified
+	if checkpoint_every:
+		if turns_budget is None:
+			turns_budget = checkpoint_every
+		else:
+			turns_budget = min(turns_budget, checkpoint_every)
+
+	if turns_budget is None:
+		# default tracking without memory balancing or checkpoints
+		line_to_track.track(
+			particles = beam_chunk, 
+			num_turns = num_turns,
+			**default_track_kwargs
+		)
+	elif record_every:
+		# `record_every` is specified.
+		# `checkpoint_every` is also included if specified.
 
 		n_max_budgets = num_turns // turns_budget
 		rest_turns = num_turns % turns_budget
@@ -275,15 +308,58 @@ def worker(
 
 				_start_turn += num_turns_portion
 
+				if checkpoint_every and (_start_turn % checkpoint_every == 0):
+					checkpoint_id = _start_turn // checkpoint_every
+					# transfering the particles object back to the user
+					with open(os.path.join(checkpoints_folder, f"checkpoint_{device}_{checkpoint_id:06d}.pkl"), 'wb') as fid:
+						pk.dump(beam_chunk.to_dict(), fid)
+
+					log_worker(
+						t0, 
+						device, 
+						f"Checkpoint {checkpoint_id} | Saved | Turn = {_start_turn}", 
+						verbose = verbose
+					)
+
 				default_track_kwargs["turn_by_turn_monitor"] = False
 				del monitor
 	else:
-		# default tracking without memory balancing
-		line_to_track.track(
-			particles = beam_chunk, 
-			num_turns = num_turns,
-			**default_track_kwargs
-		)
+		# `checkpoint_every` is specified
+		
+		n_max_budgets = num_turns // turns_budget
+		rest_turns = num_turns % turns_budget
+		turns_split = [turns_budget] * n_max_budgets
+		if rest_turns:
+			turns_split.append(rest_turns)
+
+		_start_turn = 0
+		for portion_index, num_turns_portion in enumerate(turns_split):
+
+			line_to_track.track(
+				particles = beam_chunk, 
+				num_turns = num_turns_portion,
+				**default_track_kwargs
+			)
+			log_worker(
+				t0, 
+				device, 
+				f"Portion {portion_index} | Finished tracking | Track time = {line_to_track.time_last_track}", 
+				verbose = verbose
+			)
+
+			_start_turn += num_turns_portion
+
+			checkpoint_id = _start_turn // checkpoint_every
+			# transfering the particles object back to the user
+			with open(os.path.join(checkpoints_folder, f"checkpoint_{device}_{checkpoint_id:06d}.pkl"), 'wb') as fid:
+				pk.dump(beam_chunk.to_dict(), fid)
+
+			log_worker(
+				t0, 
+				device, 
+				f"Checkpoint {checkpoint_id} | Saved | Turn = {_start_turn}", 
+				verbose = verbose
+			)
 
 	log_worker(t0, device, f"Finished tracking | Track time = {line_to_track.time_last_track}", verbose = verbose)
 
@@ -307,6 +383,7 @@ def track_multigpu(
 	num_gpus: int,
 	verbose: int = 1,
 	record_every: int | None = None,
+	checkpoint_every: int | None = None,
 	monitor_budget: int | None = None,
 	monitor_output_directory: str | Path | None = None
 	) -> xt.Particles:
@@ -386,6 +463,23 @@ def track_multigpu(
 			f"Number of particles ({particles._capacity}) is smaller than number of"
 			f" GPUs requested ({num_gpus})"
 		)
+
+	if checkpoint_every is not None:
+		if checkpoint_every <= 0:
+			raise ValueError(
+				f"`checkpoint_every` must be positive, got {checkpoint_every}."
+			)
+		if checkpoint_every < record_every:
+			raise ValueError(
+				f"Requested checkpoints are more frequent than phase space snapshots"
+				f"record_every = {record_every}; checkpoint_every = {checkpoint_every}"
+			)
+
+		if checkpoint_every % record_every:
+			raise ValueError(
+				f"`checkpoint_every` is expected to be a multiple of `record_every`"
+			)
+
 
 	log_main(t0, "Start up", verbose = verbose)
 	
