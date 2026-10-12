@@ -254,6 +254,7 @@ def worker(
 		number_portions = len(turns_split)
 
 		_start_turn = 0
+		checkpoint_id = 0
 		with h5py.File(monitor_filename, "w") as output:
 			for portion_index, num_turns_portion in enumerate(turns_split):
 				monitor_kwargs = dict(
@@ -309,7 +310,6 @@ def worker(
 				_start_turn += num_turns_portion
 
 				if checkpoint_every and (_start_turn % checkpoint_every == 0):
-					checkpoint_id = _start_turn // checkpoint_every
 					# transfering the particles object back to the user
 					with open(os.path.join(checkpoints_folder, f"checkpoint_{device}_{checkpoint_id:06d}.pkl"), 'wb') as fid:
 						pk.dump(beam_chunk.to_dict(), fid)
@@ -320,6 +320,7 @@ def worker(
 						f"Checkpoint {checkpoint_id} | Saved | Turn = {_start_turn}", 
 						verbose = verbose
 					)
+					checkpoint_id += 1
 
 				default_track_kwargs["turn_by_turn_monitor"] = False
 				del monitor
@@ -333,6 +334,7 @@ def worker(
 			turns_split.append(rest_turns)
 
 		_start_turn = 0
+		checkpoint_id = 0
 		for portion_index, num_turns_portion in enumerate(turns_split):
 
 			line_to_track.track(
@@ -348,8 +350,8 @@ def worker(
 			)
 
 			_start_turn += num_turns_portion
+			
 
-			checkpoint_id = _start_turn // checkpoint_every
 			# transfering the particles object back to the user
 			with open(os.path.join(checkpoints_folder, f"checkpoint_{device}_{checkpoint_id:06d}.pkl"), 'wb') as fid:
 				pk.dump(beam_chunk.to_dict(), fid)
@@ -361,7 +363,9 @@ def worker(
 				verbose = verbose
 			)
 
-	log_worker(t0, device, f"Finished tracking | Track time = {line_to_track.time_last_track}", verbose = verbose)
+			checkpoint_id += 1
+
+	log_worker(t0, device, f"Finished tracking", verbose = verbose)
 
 	with open(os.path.join(folder, f"out_beam_chunk_{device}.pkl"), 'wb') as fid:
 		pk.dump(beam_chunk.to_dict(), fid)
