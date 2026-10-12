@@ -5,6 +5,7 @@ import xobjects as xo
 import xtrack as xt
 import numpy as np
 import pickle as pk
+from contextlib import nullcontext
 import h5py
 
 
@@ -95,6 +96,45 @@ def save_monitor_portion(
 	group.attrs["particle_id_start"] = int(monitor.part_id_start)
 	group.attrs["particle_id_end"] = int(monitor.part_id_end)
 
+def split_turns(
+	num_turns: int, 
+	turns_budget: int | None = None, 
+	checkpoint_every: int | None = None
+	) -> list[int]:
+	"""
+	Parameters
+	----------
+	num_turns
+		Total number of turns
+	turns_budget
+		Number of turns that fit into the gpu memory limit
+	checkpoint_every
+		The number of turns between the tracking checkpoint is saved.
+	"""
+	if checkpoint_every is None:
+		checkpoint_every = num_turns + 1
+
+	if turns_budget is None:
+		turns_budget = num_turns + 1
+
+	tracked_turns = 0
+	until_checkpoint = checkpoint_every
+	portions = []
+
+	while tracked_turns < num_turns:
+		remaining_turns = num_turns - tracked_turns
+		tracked_now = min(min(turns_budget, until_checkpoint), remaining_turns)
+
+		until_checkpoint -= tracked_now
+
+		if until_checkpoint == 0:
+			until_checkpoint = checkpoint_every
+
+		portions.append(tracked_now)
+		tracked_turns += tracked_now
+
+	return portions
+
 def worker(
 	build_line: Callable[[], xt.Line],
 	device: str,
@@ -129,10 +169,10 @@ def worker(
 	device
 		Name of the GPU device for the context
 	num_turns
-		Number of turns to track the particles for
+		Number of turns to track the particles
 	folder
 		Name of the folder to read/write the particles' data. Typically is temporarily
-		created folder
+		created folder provided by the upper functions.
 	verbose
 		If `varbose > 1` prints the output from the worker
 	record_every
@@ -172,11 +212,31 @@ def worker(
 
 	with open(os.path.join(folder, f"in_beam_chunk_{device}.pkl"), 'rb') as fid:
 		beam_chunk = xt.Particles.from_dict(pk.load(fid), _context = current_context)
+		ctx2np = current_context.nparray_from_context_array
+
+		ids = ctx2np(beam_chunk.particle_id)
+
+		mask_active = ctx2np(beam_chunk.state) > 0
+
+		active_turns = np.unique(ctx2np(beam_chunk.at_turn)[mask_active])
+
+		if len(active_turns) == 0:
+			raise ValueError(
+				f"[device = {device}] "
+				"The provided beam is already lost"
+			)
+		elif len(active_turns) != 1:
+			raise ValueError(
+				f"[device = {device}] "
+				"Active particles do not start at the same turn"
+			)
+			
+		particle_id_range = np.min(ids), np.max(ids) + 1
+
+		absolute_turn = int(active_turns[0])
 
 	log_worker(t0, device, "Created particle beam", verbose = verbose)
 
-	# defines the length of tracking in terms of turns that satisfies both 
-	# `record_every` and `checkpoint_every`
 	turns_budget = None
 
 	if record_every:
@@ -193,8 +253,6 @@ def worker(
 
 		bytes_per_snapshot = beam_chunk._capacity * bytes_per_record
 
-		particle_id_range = beam_chunk.get_active_particle_id_range()
-
 		# number of snapshots that can be done for the specified budget 
 		snapshots_budget = monitor_budget // bytes_per_snapshot
 
@@ -207,58 +265,44 @@ def worker(
 		# number of turns that fit into the specified monitor budget
 		turns_budget = snapshots_budget * record_every
 
-	# refining the turns_budget when the `checkpoint_every` is specified
-	if checkpoint_every:
-		if turns_budget is None:
-			turns_budget = checkpoint_every
-		else:
-			turns_budget = min(turns_budget, checkpoint_every)
+	needs_splitting = (record_every is not None) or (checkpoint_every is not None)
 
-	if turns_budget is None:
+	if not needs_splitting:
 		# default tracking without memory balancing or checkpoints
 		line_to_track.track(
 			particles = beam_chunk, 
 			num_turns = num_turns,
 			**default_track_kwargs
 		)
-	elif record_every:
-		# `record_every` is specified.
-		# `checkpoint_every` is also included if specified.
-
-		n_max_budgets = num_turns // turns_budget
-		rest_turns = num_turns % turns_budget
-		turns_split = [turns_budget] * n_max_budgets
-		if rest_turns:
-			turns_split.append(rest_turns)
+	else:
+		turns_split = split_turns(num_turns, turns_budget, checkpoint_every)
 
 		monitor_filename = os.path.join(folder, f"particle_monitor_{device}.h5")
 
-		number_portions = len(turns_split)
+		output_context = (
+			h5py.File(monitor_filename, "w")
+			if record_every is not None
+			else nullcontext(None)
+		)
 
-		_start_turn = 0
+		tracked_turns = 0
 		checkpoint_id = 0
-		with h5py.File(monitor_filename, "w") as output:
+		
+		with output_context as output:
 			for portion_index, num_turns_portion in enumerate(turns_split):
-				monitor_kwargs = dict(
-					particle_id_range = particle_id_range,
-					start_at_turn = _start_turn,
-					stop_at_turn = _start_turn + 1,
-					repetition_period = record_every,
-					n_repetitions = (num_turns_portion + record_every - 1) // record_every,
-					auto_to_numpy = False
-				)
+				monitor = False
 
-				log_worker(
-					t0, 
-					device, 
-					f"Portion {portion_index}/{number_portions} | Monitor Created | Arguments = {monitor_kwargs}", 
-					verbose = verbose
-				)
-
-				monitor = xt.ParticlesMonitor(
-					_context = current_context,
-					**monitor_kwargs
-					)
+				if record_every is not None:
+					monitor = xt.ParticlesMonitor(
+						_context = current_context,
+						particle_id_range = particle_id_range,
+						start_at_turn = absolute_turn,
+						stop_at_turn = absolute_turn + 1,
+						repetition_period = record_every,
+						n_repetitions = (num_turns_portion + record_every - 1) // record_every,
+						auto_to_numpy = False
+						)
+				
 				default_track_kwargs["turn_by_turn_monitor"] = monitor
 
 				line_to_track.track(
@@ -273,25 +317,31 @@ def worker(
 					verbose = verbose
 				)
 
-				save_monitor_portion(	
-					output,
-					monitor, 
-					current_context,
-					portion_index = portion_index,
-					portion_start = _start_turn,
-					record_every = record_every,
-					num_snapshots = (num_turns_portion + record_every - 1) // record_every
-				)
-				log_worker(
-					t0, 
-					device, 
-					f"Portion {portion_index} | Monitor data saved", 
-					verbose = verbose
-				)
+				if monitor is not False:
+					save_monitor_portion(	
+						output,
+						monitor, 
+						current_context,
+						portion_index = portion_index,
+						portion_start = absolute_turn,
+						record_every = record_every,
+						num_snapshots = (num_turns_portion + record_every - 1) // record_every
+					)
+					log_worker(
+						t0, 
+						device, 
+						f"Portion {portion_index} | Monitor data saved", 
+						verbose = verbose
+					)
 
-				_start_turn += num_turns_portion
+					default_track_kwargs["turn_by_turn_monitor"] = False
+					line_to_track.tracker.record_last_track = None
+					del monitor
 
-				if checkpoint_every and (_start_turn % checkpoint_every == 0):
+				absolute_turn += num_turns_portion
+				tracked_turns += num_turns_portion
+
+				if checkpoint_every and (tracked_turns % checkpoint_every == 0):
 					# transfering the particles object back to the user
 					with open(os.path.join(checkpoints_folder, f"checkpoint_{device}_{checkpoint_id:06d}.pkl"), 'wb') as fid:
 						pk.dump(beam_chunk.to_dict(), fid)
@@ -299,53 +349,10 @@ def worker(
 					log_worker(
 						t0, 
 						device, 
-						f"Checkpoint {checkpoint_id} | Saved | Turn = {_start_turn}", 
+						f"Checkpoint {checkpoint_id} | Saved | Turn = {absolute_turn}", 
 						verbose = verbose
 					)
 					checkpoint_id += 1
-
-				default_track_kwargs["turn_by_turn_monitor"] = False
-				del monitor
-	else:
-		# `checkpoint_every` is specified
-		
-		n_max_budgets = num_turns // turns_budget
-		rest_turns = num_turns % turns_budget
-		turns_split = [turns_budget] * n_max_budgets
-		if rest_turns:
-			turns_split.append(rest_turns)
-
-		_start_turn = 0
-		checkpoint_id = 0
-		for portion_index, num_turns_portion in enumerate(turns_split):
-
-			line_to_track.track(
-				particles = beam_chunk, 
-				num_turns = num_turns_portion,
-				**default_track_kwargs
-			)
-			log_worker(
-				t0, 
-				device, 
-				f"Portion {portion_index} | Finished tracking | Track time = {line_to_track.time_last_track}", 
-				verbose = verbose
-			)
-
-			_start_turn += num_turns_portion
-			
-
-			# transfering the particles object back to the user
-			with open(os.path.join(checkpoints_folder, f"checkpoint_{device}_{checkpoint_id:06d}.pkl"), 'wb') as fid:
-				pk.dump(beam_chunk.to_dict(), fid)
-
-			log_worker(
-				t0, 
-				device, 
-				f"Checkpoint {checkpoint_id} | Saved | Turn = {_start_turn}", 
-				verbose = verbose
-			)
-
-			checkpoint_id += 1
 
 	log_worker(t0, device, f"Finished tracking", verbose = verbose)
 

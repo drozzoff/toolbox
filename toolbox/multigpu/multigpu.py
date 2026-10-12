@@ -44,11 +44,12 @@ def track_multigpu(
 	record_every: int | None = None,
 	checkpoint_every: int | None = None,
 	monitor_budget: int | None = None,
-	monitor_output_directory: str | Path | None = None
+	monitor_output_directory: str | Path | None = None,
+	checkpoints_directory: str | Path | None = None
 	) -> xt.Particles:
 	"""
 	Runs tracking on multiple GPUs. By default the workers use `xo.ContextPyopencl`
-	context to do the tracking. 
+	context to do the tracking.
 
 	Parameters
 	----------
@@ -61,8 +62,6 @@ def track_multigpu(
 		Number of turns to do the tracking for.
 	num_gpus
 		Number of GPUs to use for the tracking.
-	with_prgress
-		If `True` a collective progress bar appears to sum up `.track()` from each context. *not implemented*
 	verbose
 		Controls the output level.
 		`0` - no output
@@ -71,12 +70,16 @@ def track_multigpu(
 	record_every
 		If provided, uses `xt.ParticlesMonitor` to record the turn-by-turn data every `record_every`
 		given turn.
+	checkpoint_every
+		If provided, every `checkpoint_every` turn save the `Particles` object to the specified directory
 	monitor_budget
 		Maximum memory the monitor can occupy in memory when `record_every` is provided.
 	monitor_output_directory
 		The directory to save the monitors data after the tracking. The worker save 6d coordinates
 		along with `at_turn` and `state` for each particle. Creates a file for each GPU used in the
 		tracking
+	checkpoints_directory
+		The folder to store the tracking checkpoints.
 	Returns
 	-------
 	xt.Particles
@@ -87,6 +90,12 @@ def track_multigpu(
 
 	if record_every is not None and monitor_output_directory is None:
 		raise ValueError("`monitor_output_directory` is required when recording")
+
+	if checkpoint_every is not None and checkpoints_directory is None:
+		raise ValueError("`checkpoints_directory` is required when saving checkpoints")
+
+	if checkpoint_every is not None and checkpoint_every <= 0:
+		raise ValueError(f"`checkpoint_every` must be positive, got {checkpoint_every}")
 
 	if num_turns <= 0:
 		raise ValueError(f"Number of turns should be positive, got {num_turns}")
@@ -124,21 +133,7 @@ def track_multigpu(
 		)
 
 	if checkpoint_every is not None:
-		if checkpoint_every <= 0:
-			raise ValueError(
-				f"`checkpoint_every` must be positive, got {checkpoint_every}."
-			)
-		if checkpoint_every < record_every:
-			raise ValueError(
-				f"Requested checkpoints are more frequent than phase space snapshots"
-				f"record_every = {record_every}; checkpoint_every = {checkpoint_every}"
-			)
-
-		if checkpoint_every % record_every:
-			raise ValueError(
-				f"`checkpoint_every` is expected to be a multiple of `record_every`"
-			)
-
+		Path(checkpoints_directory).mkdir(parents = True, exist_ok = True)
 
 	log_main(t0, "Start up", verbose = verbose)
 	
@@ -165,7 +160,9 @@ def track_multigpu(
 				temp_folder, 
 				verbose, 
 				record_every,
-				monitor_budget
+				checkpoint_every,
+				monitor_budget,
+				checkpoints_directory
 			),
 		)
 		procs.append(p)
@@ -202,7 +199,6 @@ def track_multigpu(
 			tracked_beam = beam_chunk
 	
 	log_main(t0, f"Processed particles data", verbose = verbose)
-
 	
 	if record_every is not None:
 		output_directory = Path(monitor_output_directory)
