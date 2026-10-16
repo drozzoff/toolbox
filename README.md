@@ -232,7 +232,3 @@ snapshots = PhaseSpaceSnapshots(
 
 snapshots.save_data("phase_space_snapshots.h5")
 ```
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
