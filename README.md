@@ -43,6 +43,9 @@ For development, use an editable installation:
 python -m pip install -e .
 ```
 
+## Documenation
+It is available at [https://drozzoff.github.io/toolbox/](https://drozzoff.github.io/toolbox/).
+
 ## Visualisation
 The `PlotContext` class provides a context manager for plotting the data as a function of `s`.
 Depending on the parameters, it can also add the apertures of the elements and line structure that looks similar to the MAD-X twiss visualisation.

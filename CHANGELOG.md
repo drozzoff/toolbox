@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Introduced automatic Documentation deployment with MKDocs and GitHub Actions.
 - `toolbox.track_multigpu()` now supports tracking with checkpoints.
 - `toolbox.multigpu.save_monitor_portion()` now saves `particle_id` and `at_element`
 

@@ -1,4 +1,5 @@
 site_name: xsuite-toolbox
+site_url: https://drozzoff.github.io/toolbox/
 
 theme:
   name: material
