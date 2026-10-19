@@ -54,36 +54,36 @@ def track_multigpu(
 	Parameters
 	----------
 	particles
-		`Particles` object to track
+	    `Particles` object to track
 	line_constructor
-		A function that constructs `xt.Line` object that is going to be used to do the tracking.
-		It needs to be a function since the workers will expand the latice on each context separately.
+	    A function that constructs `xt.Line` object that is going to be used to do the tracking.
+	    It needs to be a function since the workers will expand the latice on each context separately.
 	num_turns
-		Number of turns to do the tracking for.
+	    Number of turns to do the tracking for.
 	num_gpus
-		Number of GPUs to use for the tracking.
+	    Number of GPUs to use for the tracking.
 	verbose
-		Controls the output level.
-		`0` - no output
-		`1` - output from main process
-		`2` - output from main and workers' processes
+	    Controls the output level.  
+	    **0** - no output  
+	    **1** - output from main process  
+	    **2** - output from main and workers' processes
 	record_every
-		If provided, uses `xt.ParticlesMonitor` to record the turn-by-turn data every `record_every`
-		given turn.
+	    If provided, uses `xt.ParticlesMonitor` to record the turn-by-turn data every `record_every`
+	    given turn.
 	checkpoint_every
-		If provided, every `checkpoint_every` turn save the `Particles` object to the specified directory
+	    If provided, every `checkpoint_every` turn save the `Particles` object to the specified directory
 	monitor_budget
-		Maximum memory the monitor can occupy in memory when `record_every` is provided.
+	    Maximum memory the monitor can occupy in memory when `record_every` is provided.
 	monitor_output_directory
-		The directory to save the monitors data after the tracking. The worker save 6d coordinates
-		along with `at_turn` and `state` for each particle. Creates a file for each GPU used in the
-		tracking
+	    The directory to save the monitors data after the tracking. The worker saves 6d coordinates
+	    along with `at_turn` and `state` for each particle. Creates a file for each GPU used in the
+	    tracking
 	checkpoints_directory
-		The folder to store the tracking checkpoints.
+	    The folder to store the tracking checkpoints.
 	Returns
 	-------
 	xt.Particles
-		The beam at the end of the tracking.
+	    The beam at the end of the tracking.
 	"""
 	if record_every is not None and record_every <= 0:
 		raise ValueError("`record_every` must be positive")

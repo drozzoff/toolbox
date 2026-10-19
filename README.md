@@ -43,55 +43,6 @@ For development, use an editable installation:
 python -m pip install -e .
 ```
 
-## Main functionality
-
-| Area | Public interface |
-|---|---|
-| Multi-GPU tracking | `toolbox.track_multigpu()` |
-| Multi-species lines | `toolbox.create_multispecies_lines()` |
-| **SIS18**: Tune analysis | `toolbox.SIS18.parse_tunes()` |
-| **SIS18**: BPSK excitation | `toolbox.SIS18.plain_bpsk()`, `toolbox.SIS18.modulated_bpsk()` |
-| **SIS18** rigidity ramps | `toolbox.SIS18.get_rigidity_ramp()` |
-| Slow extraction profiles for `Dashboard` | `toolbox.dashboard_profiles` |
-| Phase-space snapshots | `toolbox.PhaseSpaceSnapshots` |
-| Separatrix analysis | `toolbox.get_stable_limit()`, `toolbox.get_separatrix_vertices()` |
-| Plot context | `toolbox.visualisation.PlotContext` |
-| Misc | `toolbox.realign_mad_apertures()` |
-
-
-## Multi-GPU tracking
-
-`track_multigpu()` divides an `xtrack.Particles` object between the available OpenCL GPU devices. Each worker constructs its own line and tracking context.
-
-```python
-from toolbox import track_multigpu
-
-tracked_particles = track_multigpu(
-    particles,
-    line_constructor = build_line,
-    num_turns = 100_000,
-    num_gpus = 2,
-    verbose = 1,
-)
-```
-
-Because multiprocessing uses the `spawn` method, `line_constructor` must be a top-level, picklable function. Calls from scripts should be protected with:
-
-```python
-if __name__ == "__main__":
-    ...
-```
-
-Particle-monitor snapshots can optionally be written to HDF5 by providing `record_every` and `monitor_output_directory`.
-
-**To run calculations on the GPU cluster, one has to use a proper image. Docker images for multi-GPU tracking at GSI HPC cluster are available at dockerhub [drozzoff/xsuite](https://hub.docker.com/r/drozzoff/xsuite).**
-
-Pull the latest image with:
-```bash
-docker pull drozzoff/xsuite:latest-gsihpc
-```
-It includes all the dependencies to run on AMD GPUs and has `xsuite` and `toolbox` pre-installed.
-
 ## Visualisation
 The `PlotContext` class provides a context manager for plotting the data as a function of `s`.
 Depending on the parameters, it can also add the apertures of the elements and line structure that looks similar to the MAD-X twiss visualisation.
