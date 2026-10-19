@@ -1,0 +1,29 @@
+site_name: xsuite-toolbox
+site_url: https://drozzoff.github.io/toolbox/
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: numpy
+            docstring_section_style: spacy
+            allow_inspection: true
+
+markdown_extensions:
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Guides:
+    - Multi-GPU tracking: guides/multi_gpu.md
+  - API References:
+    - track_multi_gpu(): reference/multi_gpu.md
