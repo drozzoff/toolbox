@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+
+
+## [0.1.2] - 19-10-2026
+
 ### Changed
 
 - Introduced automatic Documentation deployment with MKDocs and GitHub Actions.
