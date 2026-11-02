@@ -4,7 +4,11 @@
 
 ### Added
 
+- A new function `get_separatrix_properties()` that returns the separatrix area and orientation.
 
+### Changed
+
+- Separated internally the separatrix search and separatrix gemotry
 
 ## [0.1.2] - 19-10-2026
 

@@ -1,44 +1,96 @@
 import numpy as np
 import xtrack as xt
 from pandas import DataFrame
+from skimage.measure import ransac, LineModelND
 from toolbox.phase_space.separatrix_search import get_stable_and_unstable_particle
+
+def calcualte_enclosed_area(x: np.array, px: np.array) -> float:
+
+	points = np.column_stack([x, px])
+
+	center = points.mean(axis = 0)
+
+	angles = np.arctan2( points[:, 1] - center[1], points[:, 0] - center[0])
+
+	idx = np.argsort(angles)
+	points_sorted = points[idx]
+
+	x_s  = points_sorted[:, 0]
+	px_s = points_sorted[:, 1]
+	area = 0.5 * np.abs(np.sum(x_s * np.roll(px_s, -1) - px_s * np.roll(x_s, -1)))
+
+	return area
 
 def get_separatrix_properties(
 	line: xt.Line, 
 	ex_norm: float, 
-	n_particles: int, 
-	num_turns: int,
+	n_particles: int = 21, 
+	num_turns: int = 1_000,
 	*,
 	test_range: list[float] = [-3.0, 0.0],
 	ion: xt.Particles | None = None,
-	precision: float = 1e-6,
+	precision: float = 1e-4,
 	shrinkage_strength: int | str = "max",
-	residual_threshold: float = 1e-4,
-	max_trials: int = 2000,
+	max_iterations: int = 2_000,
 	**kwargs
 	) -> dict:
 	"""
 	Evaluates the separatrix enclosed area. If the septum location is provided
 	also evaluates the spiral step and the extraction angle.
 	"""
-	pass
+	particles, __ = get_stable_and_unstable_particle(
+		line, 
+		ex_norm, 
+		n_particles,
+		num_turns,
+		test_range = test_range,
+		ion = ion,
+		precision = precision,
+		shrinkage_strength = shrinkage_strength,
+		max_iterations = max_iterations,
+		**kwargs
+	)
+	stable_particle, unstable_particle = particles
 
+	# Using the stable particle to evalute the properties of the
+	# separatrix enclosed phase space
+
+	p = stable_particle.copy()
+
+	line.track(
+		p,
+		num_turns = num_turns,
+		turn_by_turn_monitor = True
+	)
+
+	monitor_stable = line.record_last_track
+
+	stats = {
+		"area": calcualte_enclosed_area(
+			x = monitor_stable.x.ravel(),
+			px = monitor_stable.px.ravel()
+			),
+	}
+
+	return stats
+	
 def get_separatrix_vertices(
 	line: xt.Line, 
 	ex_norm: float, 
-	n_particles: int, 
-	num_turns: int,
+	n_particles: int = 21, 
+	num_turns: int = 1_000,
 	*,
 	test_range: list[float] = [-3.0, 0.0],
 	ion: xt.Particles | None = None,
-	precision: float = 1e-6,
+	precision: float = 1e-4,
 	shrinkage_strength: int | str = "max",
+	max_iterations: int = 2_000,
 	residual_threshold: float = 1e-4,
-	max_trials: int = 2000,
 	**kwargs
 	) -> DataFrame:
 	"""
 	Calculates 3 vertices of the separatrix around 3rd integer resonance.
+	Uses the RANSAC (random sample consensus) algorithm for the fit.
 	
 	Parameters
 	----------
@@ -58,22 +110,27 @@ def get_separatrix_vertices(
 		A particle to use for the tracking. 
 		Default is `None` -> uses reference particle associated with a beamline.
 	precision
-		distance between the stable and unstable track. `test_range` is used to evaluate this.
-	shrinkage_strength: int or str
+		distance between the stable and unstable track. `test_range` is used to 
+		evaluate this.
+	shrinkage_strength
 		Defines how the `test_range` is shrinked in iterations.
-		If `int` it leaves certain number of particles on the left and right of the identified
-		If `str` is `'max'` no extra steps are added.
+		If `int` it leaves certain number of particles on the left and right 
+		of the identified. If `str` is `'max'` no extra steps are added.
 		Default is `'max'`.
-	max_iterations : int
-		Limit on the number of iterations for the stable area search. 
+	max_iterations
+		Limit on the number of iterations for the stable area search and for RANSCAC.
 		Default is `2000`.
+	residual_threshold:
+		Maximum distance for a data point to be classified as an inlier.
+		**passed to RANSAC**.
 		
 	Additional parameters
 	---------------------
 	verbose : int
 		If `verbose < 1` no output is printed.
 		If `verbose == 1` prints the progress bar (**default**)
-		If `verbose > 1` prints the progress bar and particles distribution at each iteration
+		If `verbose > 1` prints the progress bar and particles distribution 
+			at each iteration
 	zeta : np.array
 		`zeta` coordinate for the test beam
 	delta : np.array
@@ -82,10 +139,9 @@ def get_separatrix_vertices(
 	Returns
 	-------
 	DataFrame
-		Coordinates of 3 points in the phase space being the vertices of the stability triangle.
+		Coordinates of 3 points in the phase space being the vertices of the 
+		stability triangle.
 	"""
-	from skimage.measure import ransac, LineModelND
-
 	verbose = kwargs.get('verbose', 0)
 
 	particles, __ = get_stable_and_unstable_particle(
@@ -97,6 +153,7 @@ def get_separatrix_vertices(
 		ion = ion,
 		precision = precision,
 		shrinkage_strength = shrinkage_strength,
+		max_iterations = max_iterations,
 		**kwargs
 	)
 	stable_particle, unstable_particle = particles
@@ -133,7 +190,7 @@ def get_separatrix_vertices(
 			LineModelND, 
 			min_samples = 2, 
 			residual_threshold = residual_threshold,
-			max_trials = max_trials
+			max_trials = max_iterations
 		)
 
 		p0, u = model.params

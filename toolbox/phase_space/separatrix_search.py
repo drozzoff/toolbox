@@ -3,7 +3,13 @@ from tqdm.notebook import tqdm
 import xtrack as xt
 
 
-def stable_particle_id(line: xt.Line, particles: xt.Particles, num_turns, **kwargs):
+def stable_particle_id(
+	line: xt.Line, 
+	particles: xt.Particles, 
+	num_turns,
+	twiss: xt.TwissTable | None = None,
+	**kwargs
+	) -> tuple[int, list]:
 	"""
 	Evaluates the `particle_id` of a particle in `particles` that is located
 	in a stable region.
@@ -11,7 +17,7 @@ def stable_particle_id(line: xt.Line, particles: xt.Particles, num_turns, **kwar
 	The function assumes `particles` are generated with a continous set of `x` from
 	negative values towards 0.
 	
-	Unstable particles are at the beginning, stable particles at the end
+	Unstable particles are at the beginning, stable particles at the end.
 
 	Parameters
 	----------
@@ -21,14 +27,26 @@ def stable_particle_id(line: xt.Line, particles: xt.Particles, num_turns, **kwar
 		Particles objec with `x` coordinate being continous
 	num_turns
 		Number of turns for the tracking
-
+	twiss
+		TwissTable for the lattice. If not provided, is evaluated internally.
+	
 	Additional parameters
 	---------------------
 	verbose : int
-		If <= 1, function does not generate any ouput. For `verbose > 1` plots the particles' tracks
+		If <= 1, function does not generate any ouput. 
+		For `verbose > 1` plots the particles' tracks
+
+	Returns
+	-------
+	Tuple with the id of a stable particle and list of action differences
+	extracted from the tracking
 	"""
 	n_particles = particles._num_active_particles
-	tw = line.twiss4d()
+
+	if isinstance(twiss, xt.TwissTable):
+		tw = twiss
+	else:
+		tw = line.twiss4d()	
 
 	verbose = kwargs.get("verbose", 0)
 
@@ -36,7 +54,11 @@ def stable_particle_id(line: xt.Line, particles: xt.Particles, num_turns, **kwar
 		import matplotlib.pyplot as plt
 		import seaborn as sns
 
-	line.track(particles, num_turns = num_turns, turn_by_turn_monitor = True)
+	line.track(
+		particles, 
+		num_turns = num_turns, 
+		turn_by_turn_monitor = True
+	)
 
 	rec = line.record_last_track
 	nc = tw.get_normalized_coordinates(rec.data)
@@ -50,7 +72,11 @@ def stable_particle_id(line: xt.Line, particles: xt.Particles, num_turns, **kwar
 	
 	for particle_id in range(n_particles):
 		lost_at_turn = particles.at_turn[particle_id]
-		Jx = list(map(lambda x, y: np.sqrt(x**2 + y**2), x_norms[particle_id][:lost_at_turn + 1], px_norms[particle_id][:lost_at_turn + 1]))
+		Jx = list(map(
+			lambda x, y: np.sqrt(x**2 + y**2), 
+			x_norms[particle_id][:lost_at_turn + 1], 
+			px_norms[particle_id][:lost_at_turn + 1]
+		))
 	  
 		Jx_mean.append(np.mean(Jx))
 	
@@ -82,14 +108,14 @@ def stable_particle_id(line: xt.Line, particles: xt.Particles, num_turns, **kwar
 def get_stable_limit(
 	line: xt.Line, 
 	ex_norm: float, 
-	n_particles: int, 
-	num_turns: int,
+	n_particles: int = 21, 
+	num_turns: int = 1_000,
 	*,
 	test_range: list[float] = [-3.0, 0.0], 
 	ion: xt.Particles | None = None, 
-	precision: float = 1e-6,
+	precision: float = 1e-4,
 	shrinkage_strength: int | str = "max",
-	max_iterations: int = 2000,
+	max_iterations: int = 2_000,
 	**kwargs
 	):
 
@@ -108,16 +134,19 @@ def get_stable_limit(
 	num_turns
 		number of turns to track for the search
 	test_range
-		initial guess for the location of the stable region limit. Must contain two elements both negative.
-		The number corresponds to the normalized x coordinate to a sigma. (`xt.line.build_particles()`))
+		initial guess for the location of the stable region limit. Must contain 
+		two elements both negative. The number corresponds to the normalized 
+		x coordinate to a sigma. (`xt.line.build_particles()`))
 	ion
 		A particle to use for the tracking.
 		Default is `None` -> uses reference particle associated with a beamline.
 	precision
-		distance between the stable and unstable track. `test_range` is used to evaluate this.
+		Distance between the stable and unstable track. The distance is 
+		in the normalised phase space divided by sigma.
 	shrinkage_strength: int or str
 		Defines how the `test_range` is shrinked in iterations.
-		If `int` it leaves certain number of particles on the left and right of the identified region.
+		If `int` it leaves certain number of particles on the left and 
+		right of the identified region.
 		If `str` is `'max'` no extra steps are added.
 		Default is `'max'`.
 	max_iterations : int
@@ -128,7 +157,8 @@ def get_stable_limit(
 	verbose : int
 		If `verbose < 1` no output is printed.
 		If `verbose == 1` prints the progress bar (**default**)
-		If `verbose > 1` prints the progress bar and particles distribution at each iteration
+		If `verbose > 1` prints the progress bar and particles distribution 
+		at each iteration
 	zeta : np.array
 		`zeta` coordinate for the test beam
 	delta : np.array
@@ -142,12 +172,33 @@ def get_stable_limit(
 	dict
 		Contains the data of the iterations. Keys are `jx_diff` and `x_norm`.
 	"""
+	if precision <= 0:
+		raise ValueError("precision must be positive")
+
 	verbose = kwargs.get("verbose", 1)
+	range_low = test_range[0]
+	range_high = test_range[1]
+	initial_width = range_high - range_low
+
 	with_progress = verbose > 0
-	progress = tqdm(total = 100, desc = "Tracking to find a stable region", leave = True) if with_progress else None
-	
+	if with_progress:
+		log_span = np.log(initial_width / precision)
+
+		def convergence_percent(width):
+			if width <= precision:
+				return 100.0
+
+			completed = np.log(initial_width / width) / log_span
+			return 100.0 * np.clip(completed, 0.0, 1.0)
+		
+		progress = tqdm(
+			total = 100, 
+			desc = "Tracking to find a stable region", 
+	    	leave = True
+		)
+
 	get_progress = lambda x: 1 - (x - precision) / x
-	progress_init = min(1, get_progress(test_range[1] - test_range[0])) * 100 # in %
+	progress_init = min(1, get_progress(range_high - range_low)) * 100 # in %
 	
 	if with_progress:
 		progress.update(progress_init)
@@ -156,10 +207,11 @@ def get_stable_limit(
 		'jx_diff': [],
 		'x_norm': []
 	}
+
 	iter_id = 0
-	while (test_range[1] - test_range[0]) > precision and iter_id < max_iterations:
+	while (range_high - range_low) > precision and iter_id < max_iterations:
 		
-		x_test = np.linspace(test_range[0], test_range[1], n_particles)
+		x_test = np.linspace(range_low, range_high, n_particles)
 		iterations_data['x_norm'].append(x_test)
 		
 		test_beam = line.build_particles(
@@ -193,38 +245,43 @@ def get_stable_limit(
 		iterations_data['jx_diff'].append(jx_diff)
 		
 		if shrinkage_strength == "max":
-			test_range[0] = x_test[particle_id_stable - 1]
-			test_range[1] = x_test[particle_id_stable]
+			range_low = x_test[particle_id_stable - 1]
+			range_high = x_test[particle_id_stable]
 		elif isinstance(shrinkage_strength, int):
 			left = particle_id_stable - 1 - shrinkage_strength
 			right = particle_id_stable + shrinkage_strength
-			test_range[0] = x_test[left if left >= 0 else 0]
-			test_range[1] = x_test[right if right < n_particles else n_particles - 1]
+			range_low = x_test[left if left >= 0 else 0]
+			range_high = x_test[right if right < n_particles else n_particles - 1]
 		
 		if with_progress:
-			progress_current = min(1, get_progress(test_range[1] - test_range[0])) * 100 # in %
-			progress.update(progress_current - progress_init) 
+			current_width = range_high - range_low
+			progress_current = convergence_percent(current_width)
+			progress.update(progress_current - progress.n) 
 	
-			progress_init = progress_current
+			progress.set_postfix(
+				width=f"{current_width:.2e}",
+				target=f"{precision:.2e}",
+				iteration=iter_id + 1,
+			)
 
 		iter_id += 1
 	
 	if with_progress:
 		progress.close()
 		
-	return test_range, iterations_data
+	return [range_low, range_high], iterations_data
 
 def get_stable_and_unstable_particle(
 	line: xt.Line, 
 	ex_norm: float, 
-	n_particles: int, 
-	num_turns: int,
+	n_particles: int = 21, 
+	num_turns: int = 1_000,
 	*,
 	test_range: list[float] = [-3.0, 0.0], 
 	ion: xt.Particles | None = None, 
 	precision: float = 1e-6,
 	shrinkage_strength: int | str = "max",
-	max_iterations: int = 2000,
+	max_iterations: int = 2_000,
 	**kwargs
 	) -> tuple[tuple[xt.Particles, xt.Particles], dict]:
 	"""
@@ -285,7 +342,7 @@ def get_stable_and_unstable_particle(
 		ion = ion,
 		precision = precision,
 		shrinkage_strength = shrinkage_strength,
-		max_iterations = max_iterations
+		max_iterations = max_iterations,
 		**kwargs
 	)
 
