@@ -4,26 +4,60 @@ from pandas import DataFrame
 from skimage.measure import ransac, LineModelND
 from toolbox.phase_space.separatrix_search import get_stable_and_unstable_particle
 
-def calcualte_enclosed_area(x: np.array, px: np.array) -> float:
-
+def sort_by_angle(x: np.array, px: np.array) -> tuple[np.array, np.array]:
 	points = np.column_stack([x, px])
-
+	
 	center = points.mean(axis = 0)
-
 	angles = np.arctan2( points[:, 1] - center[1], points[:, 0] - center[0])
 
 	idx = np.argsort(angles)
 	points_sorted = points[idx]
 
-	x_s  = points_sorted[:, 0]
-	px_s = points_sorted[:, 1]
-	area = 0.5 * np.abs(np.sum(x_s * np.roll(px_s, -1) - px_s * np.roll(x_s, -1)))
+	return points_sorted[:, 0], points_sorted[:, 1]
 
-	return area
+def calcualte_enclosed_area(x: np.array, px: np.array) -> float:
+	x_s, px_s = sort_by_angle(x, px)
+
+	return 0.5 * np.abs(np.sum(x_s * np.roll(px_s, -1) - px_s * np.roll(x_s, -1)))
+
+def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> tuple[float, float]:
+	"""
+	x_exit is the septum aperture
+	"""
+	alive_mask = (x != 0) & (px != 0)
+
+	x_alive = x[alive_mask]
+	px_alive = px[alive_mask]
+
+	x_mean = np.mean(x_alive)
+
+	if x_exit <= x_mean:
+		# septum on the left
+		extracted_id = np.where(x_alive <= x_exit)[0][0]
+
+	else:
+		# septum on the right
+		extracted_id = np.where(x_alive >= x_exit)[0][0]
+
+	x0 = x_alive[extracted_id]
+	px0 = px_alive[extracted_id]
+
+	dist = np.sqrt((x - x0) + (px - px0)**2)
+	dist[extracted_id] = np.inf
+
+	closest_id = np.argmin(dist)
+	x1 = x_alive[closest_id]
+	px1 = px_alive[closest_id]
+
+	spiral_step = abs(x1 - x0)
+	angle = px1 + (x_exit - x1) * (px0 - px1) / (x0 - x1)
+
+	return spiral_step, angle
 
 def get_separatrix_properties(
 	line: xt.Line, 
 	ex_norm: float, 
+	x_exit: float,
 	n_particles: int = 21, 
 	num_turns: int = 1_000,
 	*,
@@ -52,27 +86,38 @@ def get_separatrix_properties(
 	)
 	stable_particle, unstable_particle = particles
 
-	# Using the stable particle to evalute the properties of the
-	# separatrix enclosed phase space
-
 	p = stable_particle.copy()
-
 	line.track(
 		p,
 		num_turns = num_turns,
 		turn_by_turn_monitor = True
 	)
 
-	monitor_stable = line.record_last_track
+	stable_rec = line.record_last_track
+	area = calcualte_enclosed_area(
+		x = stable_rec.x.ravel(),
+		px = stable_rec.px.ravel()
+	)
 
-	stats = {
-		"area": calcualte_enclosed_area(
-			x = monitor_stable.x.ravel(),
-			px = monitor_stable.px.ravel()
-			),
+	p = unstable_particle.copy()
+	line.track(
+		p,
+		num_turns = num_turns,
+		turn_by_turn_monitor = True
+	)
+
+	unstable_rec = line.record_last_track
+	spiral_step, angle = calculate_septum_crossing(
+		x = unstable_rec.x.ravel(),
+		px = unstable_rec.px.ravel(),
+		x_exit = x_exit
+	)
+
+	return {
+		'area': area,
+		'spiral_step': spiral_step,
+		'angle': angle
 	}
-
-	return stats
 	
 def get_separatrix_vertices(
 	line: xt.Line, 
