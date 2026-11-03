@@ -8,7 +8,7 @@ def sort_by_angle(x: np.array, px: np.array) -> tuple[np.array, np.array]:
 	points = np.column_stack([x, px])
 	
 	center = points.mean(axis = 0)
-	angles = np.arctan2( points[:, 1] - center[1], points[:, 0] - center[0])
+	angles = np.arctan2(points[:, 1] - center[1], points[:, 0] - center[0])
 
 	idx = np.argsort(angles)
 	points_sorted = points[idx]
@@ -20,12 +20,11 @@ def calcualte_enclosed_area(x: np.array, px: np.array) -> float:
 
 	return 0.5 * np.abs(np.sum(x_s * np.roll(px_s, -1) - px_s * np.roll(x_s, -1)))
 
-def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> tuple[float, float]:
+def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 	"""
 	x_exit is the septum aperture
 	"""
 	alive_mask = (x != 0) & (px != 0)
-
 	x_alive = x[alive_mask]
 	px_alive = px[alive_mask]
 
@@ -52,7 +51,12 @@ def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> tuple
 	spiral_step = abs(x1 - x0)
 	angle = px1 + (x_exit - x1) * (px0 - px1) / (x0 - x1)
 
-	return spiral_step, angle
+	return {
+		'spiral_step': spiral_step,
+		'angle': angle,
+		'last_point': [x0, px0],
+		'prelast_point': [x1, px1],
+	}
 
 def get_separatrix_properties(
 	line: xt.Line,
@@ -109,16 +113,14 @@ def get_separatrix_properties(
 		If `verbose == 1` prints the progress bar (**default**)
 		If `verbose > 1` prints the progress bar and particles distribution 
 			at each iteration
-	zeta : np.array
-		`zeta` coordinate for the test beam
-	delta : np.array
-		`delta` coordinate for the test beam
 
 	Returns
 	-------
 	Dictionary containing enclosed area, extraction angle and a spiral step.
 	Also includes bound and unbound trajectories in the phase space.		
 	"""
+	verbose = kwargs.get('verbose')
+
 	particles, __ = get_stable_and_unstable_particle(
 		line, 
 		ex_norm, 
@@ -139,12 +141,11 @@ def get_separatrix_properties(
 		num_turns = num_turns,
 		turn_by_turn_monitor = True
 	)
-
 	stable_rec = line.record_last_track
-	area = calcualte_enclosed_area(
-		x = stable_rec.x.ravel(),
-		px = stable_rec.px.ravel()
-	)
+	x_stable = stable_rec.x.ravel()
+	px_stable = stable_rec.px.ravel()
+
+	area = calcualte_enclosed_area(x_stable, px_stable)
 
 	p = unstable_particle.copy()
 	line.track(
@@ -152,18 +153,51 @@ def get_separatrix_properties(
 		num_turns = num_turns,
 		turn_by_turn_monitor = True
 	)
-
 	unstable_rec = line.record_last_track
-	spiral_step, angle = calculate_septum_crossing(
-		x = unstable_rec.x.ravel(),
-		px = unstable_rec.px.ravel(),
-		x_exit = x_exit
-	)
+	x_unstable = unstable_rec.x.ravel()
+	px_unstable = unstable_rec.px.ravel()
+
+	sept_crossing = calculate_septum_crossing(x_unstable, px_unstable, x_exit)
+
+	if verbose == 2:
+		import matplotlib.pyplot as plt
+		import seaborn as sns
+
+		x0, px0 = sept_crossing['last_point']
+		x1, px1 = sept_crossing['prelast_point']
+
+		with sns.axes_style("whitegrid"):		
+			sns.scatterplot(
+				x = x_unstable, y = px_unstable,
+				s = 10, color = "tab:red",
+				label = "Unstable track",
+			)
+
+			sns.scatterplot(
+				x = x_stable, y = px_stable,
+				s = 10, color = "black",
+				label = "Stable track",
+			)
+
+			plt.axvline(
+				x = x_exit, color = "tab:blue", 
+				label = "Septum", lw = 2.0, 
+				ls = 'dashed'
+			)
+
+			plt.plot(
+				[x0, x1], [px0, px1], '-', 
+			    color = "tab:orange", label = "Septum crossing")
+
+			plt.xlabel("x [m]")
+			plt.ylabel("px [rad]")
+
+			plt.show()
 
 	return {
 		'area': area,
-		'spiral_step': spiral_step,
-		'angle': angle
+		'spiral_step': sept_crossing['spiral_step'],
+		'angle': sept_crossing['angle']
 	}
 	
 def get_separatrix_vertices(

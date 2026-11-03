@@ -50,10 +50,6 @@ def stable_particle_id(
 
 	verbose = kwargs.get("verbose", 0)
 
-	if verbose > 1:
-		import matplotlib.pyplot as plt
-		import seaborn as sns
-
 	line.track(
 		particles, 
 		num_turns = num_turns, 
@@ -90,18 +86,23 @@ def stable_particle_id(
 	
 	particle_id_stable = np.argmax(jx_diff)
 	if verbose > 1:
-		sns.set_style("darkgrid")
-		fig, axes = plt.subplots()
-		for i in range(n_particles):
-			sns.scatterplot(
-				x = x_norms[i],
-				y = px_norms[i],
-				color = "red", 
-				alpha = 0.6, 
-				s = 5,
-				ax = axes
-			)    
-		plt.show()
+		import matplotlib.pyplot as plt
+		import seaborn as sns
+
+		with sns.axes_style("whitegrid"):
+			for i in range(n_particles):
+				sns.scatterplot(
+					x = x_norms[i],
+					y = px_norms[i],
+					color = "red", 
+					alpha = 0.6, 
+					s = 5,
+				)
+
+			plt.xlabel("X")
+			plt.ylabel("PX")
+
+			plt.show()
 	
 	return particle_id_stable, jx_diff
 
@@ -159,11 +160,7 @@ def get_stable_limit(
 		If `verbose == 1` prints the progress bar (**default**)
 		If `verbose > 1` prints the progress bar and particles distribution 
 		at each iteration
-	zeta : np.array
-		`zeta` coordinate for the test beam
-	delta : np.array
-		`delta` coordinate for the test beam
-	
+
 	Returns
 	-------
 	List[float]
@@ -216,8 +213,6 @@ def get_stable_limit(
 		
 		test_beam = line.build_particles(
 			x_norm = x_test,
-			zeta = kwargs.get("zeta", 0.0),
-			delta = kwargs.get("delta", 0.0),
 			nemitt_x = ex_norm,
 			mode = "normalized_transverse",
 			method = '4d'
@@ -231,8 +226,10 @@ def get_stable_limit(
 				charge_ratio = ion.q0 / line.particle_ref.q0,
 				x = test_beam.x,
 				px = test_beam.px,
-				zeta = kwargs.get("zeta", 0.0),
-				delta = kwargs.get("delta", 0.0)
+				y = ion.y,
+				py = ion.py,
+				zeta = ion.zeta,
+				delta = ion.delta
 			)
 			test_beam = test_beam2
 
@@ -315,15 +312,10 @@ def get_stable_and_unstable_particle(
 		
 	Additional parameters
 	---------------------
-	
 	verbose : int
 		If `verbose < 1` no output is printed.
 		If `verbose == 1` prints the progress bar (**default**)
 		If `verbose > 1` prints the progress bar and particles distribution at each iteration
-	zeta : np.array
-		`zeta` coordinate for the test beam
-	delta : np.array
-		`delta` coordinate for the test beam
 
 	Returns
 	-------
@@ -353,31 +345,32 @@ def get_stable_and_unstable_particle(
 		method = "4d"
 	)
 
-	mass_ratio = 1.0 if ion is None else ion.mass0 / line.particle_ref.mass0
-	charge_ratio = 1.0 if ion is None else ion.q0 / line.particle_ref.q0
+	beam_creation_opt = {}
+	if ion is not None:
+		beam_creation_opt['mass_ratio'] = ion.mass0 / line.particle_ref.mass0
+		beam_creation_opt['charge_ratio'] = ion.q0 / line.particle_ref.q0
+		beam_creation_opt['y'] = ion.y
+		beam_creation_opt['py'] = ion.py
+		beam_creation_opt['delta'] = ion.delta
+		beam_creation_opt['zeta'] = ion.zeta
+
 
 	stable_particle = xt.Particles(
 		mass0 = line.particle_ref.mass0, 
 		q0 = line.particle_ref.q0,
 		gamma0 = line.particle_ref.gamma0,
-		mass_ratio = mass_ratio,
-		charge_ratio = charge_ratio,
 		x = tmp.x[1],
 		px = tmp.px[1],
-		delta = kwargs.get('delta', 0),
-		zeta = kwargs.get('zeta', 0)
+		**beam_creation_opt
 	)
 
 	unstable_particle = xt.Particles(
 		mass0 = line.particle_ref.mass0,
 		q0 = line.particle_ref.q0,
 		gamma0 = line.particle_ref.gamma0,
-		mass_ratio = mass_ratio,
-		charge_ratio = charge_ratio,
 		x = tmp.x[0],
 		px = tmp.px[0],
-		delta = kwargs.get('delta', 0),
-		zeta = kwargs.get('zeta', 0)
+		**beam_creation_opt
 	)
 
 	return (stable_particle, unstable_particle), iteration_data
