@@ -191,7 +191,8 @@ def get_separatrix_properties(
 
 			plt.xlabel("x [m]")
 			plt.ylabel("px [rad]")
-
+			plt.legend()
+			
 			plt.show()
 
 	return {

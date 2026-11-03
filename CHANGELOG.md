@@ -1,14 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.3] - 03-11-2026
 
 ### Added
 
-- A new function `get_separatrix_properties()` that returns the separatrix area and orientation.
+- A new function `get_separatrix_properties()` that returns the separatrix properties.
 
 ### Changed
 
-- Separated internally the separatrix search and separatrix gemotry
+- Adjusted the API for `get_stable_and_unstable_particle()`
+- Separated internally the separatrix search and separatrix geometry
 
 ## [0.1.2] - 19-10-2026
 
