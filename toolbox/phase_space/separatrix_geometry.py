@@ -70,7 +70,8 @@ def get_separatrix_properties(
 	precision: float = 1e-4,
 	shrinkage_strength: int | str = "max",
 	max_iterations: int = 2_000,
-	**kwargs
+	twiss: xt.TwissTable | None = None,
+	verbose: int = 1,
 	) -> dict:
 	"""
 	Evaluates the separatrix enclosed area. If the septum location is provided
@@ -105,9 +106,8 @@ def get_separatrix_properties(
 	max_iterations
 		Limit on the number of iterations for the stable area search and for RANSCAC.
 		Default is `2000`.
-		
-	Additional parameters
-	---------------------
+	twiss : xt.TwissTable
+		TwissTable for the lattice. If not provided, is evaluated internally.
 	verbose : int
 		If `verbose < 1` no output is printed.
 		If `verbose == 1` prints the progress bar (**default**)
@@ -119,7 +119,8 @@ def get_separatrix_properties(
 	Dictionary containing enclosed area, extraction angle and a spiral step.
 	Also includes bound and unbound trajectories in the phase space.		
 	"""
-	verbose = kwargs.get('verbose')
+	if twiss is None:
+		twiss = line.twiss4d()
 
 	particles, __ = get_stable_and_unstable_particle(
 		line, 
@@ -131,7 +132,8 @@ def get_separatrix_properties(
 		precision = precision,
 		shrinkage_strength = shrinkage_strength,
 		max_iterations = max_iterations,
-		**kwargs
+		twiss = twiss,
+		verbose = verbose,
 	)
 	stable_particle, unstable_particle = particles
 
