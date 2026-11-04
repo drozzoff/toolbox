@@ -1,8 +1,9 @@
+import warnings
 import numpy as np
 import xtrack as xt
 from pandas import DataFrame
 from skimage.measure import ransac, LineModelND
-from toolbox.phase_space.separatrix_search import get_stable_and_unstable_particle
+from toolbox.phase_space.separatrix_search import get_stable_and_unstable_particle, NoStableParticleError, NoUnstableParticleError
 
 def sort_by_angle(x: np.array, px: np.array) -> tuple[np.array, np.array]:
 	points = np.column_stack([x, px])
@@ -31,12 +32,12 @@ def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 	x_mean = np.mean(x_alive)
 
 	if x_exit <= x_mean:
-		# septum on the left
-		extracted_id = np.where(x_alive <= x_exit)[0][0]
+		# septum is to the left of the particles
+		extracted_id = np.argmin(x_alive)
 
 	else:
-		# septum on the right
-		extracted_id = np.where(x_alive >= x_exit)[0][0]
+		# septum is to the right of the particles
+		extracted_id = np.argmax(x_alive)
 
 	x0 = x_alive[extracted_id]
 	px0 = px_alive[extracted_id]
@@ -58,19 +59,23 @@ def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 		'prelast_point': [x1, px1],
 	}
 
+class SeparatrixSearchError(RuntimeError):
+	"""Generic error when separatrix search fails"""
+
 def get_separatrix_properties(
 	line: xt.Line,
-	x_exit: float,
+	septum: dict,
 	ex_norm: float, 
-	test_range: list[float] = [-3.0, 0.0],
+	test_range: list[float] = [-2.0, 0.0],
 	*,
-	n_particles: int = 21, 
-	num_turns: int = 1_000,
+	n_particles: int = 5, 
+	num_turns: int = 500,
 	ion: xt.Particles | None = None,
 	precision: float = 1e-4,
 	shrinkage_strength: int | str = "max",
 	max_iterations: int = 2_000,
-	**kwargs
+	twiss: xt.TwissTable | None = None,
+	verbose: int = 1,
 	) -> dict:
 	"""
 	Evaluates the separatrix enclosed area. If the septum location is provided
@@ -82,8 +87,14 @@ def get_separatrix_properties(
 		Beamline to do the tracking on
 	ex_norm
 		Horizontal normalized emittance
-	x_exit
-		Horizontal aperture of the septum
+	septum
+		Dict with the names of the entrance and exit apertures. Eg.:
+		```python
+		{
+			"entrance": 'gs04me1e_en_aper',
+			"exit": "gs04me1e_ex_aper"
+		}
+		```
 	test_range
 		initial guess for the location of the stable region limit. 
 		Must contain two elements both negative. The number corresponds to the 
@@ -105,9 +116,8 @@ def get_separatrix_properties(
 	max_iterations
 		Limit on the number of iterations for the stable area search and for RANSCAC.
 		Default is `2000`.
-		
-	Additional parameters
-	---------------------
+	twiss : xt.TwissTable
+		TwissTable for the lattice. If not provided, is evaluated internally.
 	verbose : int
 		If `verbose < 1` no output is printed.
 		If `verbose == 1` prints the progress bar (**default**)
@@ -119,20 +129,29 @@ def get_separatrix_properties(
 	Dictionary containing enclosed area, extraction angle and a spiral step.
 	Also includes bound and unbound trajectories in the phase space.		
 	"""
-	verbose = kwargs.get('verbose')
+	if twiss is None:
+		twiss = line.twiss4d()
 
-	particles, __ = get_stable_and_unstable_particle(
-		line, 
-		ex_norm, 
-		n_particles,
-		num_turns,
-		test_range = test_range,
-		ion = ion,
-		precision = precision,
-		shrinkage_strength = shrinkage_strength,
-		max_iterations = max_iterations,
-		**kwargs
-	)
+	try:
+		particles, __ = get_stable_and_unstable_particle(
+			line, 
+			ex_norm, 
+			n_particles,
+			num_turns,
+			test_range = test_range,
+			ion = ion,
+			precision = precision,
+			shrinkage_strength = shrinkage_strength,
+			max_iterations = max_iterations,
+			twiss = twiss,
+			verbose = verbose,
+		)
+	except (NoStableParticleError, NoUnstableParticleError) as e:
+		raise SeparatrixSearchError(
+			f"`test_range` provided is bad."
+			f"Caught {e} during the tracking."
+			)
+
 	stable_particle, unstable_particle = particles
 
 	p = stable_particle.copy()
@@ -157,7 +176,37 @@ def get_separatrix_properties(
 	x_unstable = unstable_rec.x.ravel()
 	px_unstable = unstable_rec.px.ravel()
 
-	sept_crossing = calculate_septum_crossing(x_unstable, px_unstable, x_exit)
+	if p.state[0] > 0:
+		raise ValueError(f"Selected unstable particle survived all {num_turns} turns")
+
+	# looking closely at the loss location
+	ele_id_lost = p.at_element[0]
+	ele_name_lost = line.element_names[ele_id_lost]
+
+	septum_aperture = None
+
+	if ele_name_lost in (septum['entrance'], septum['exit']):
+		if ele_name_lost == septum['exit']:
+			warnings.warn(
+				"The unstable particle is lost on the exit aperture."
+				"It is possible it is lost on the septum wires."
+			)
+		min_x = line[septum['entrance']].min_x
+		max_x = line[septum['entrance']].max_x
+		aperture_inf = 1e8
+
+		if max_x > aperture_inf and abs(min_x) < aperture_inf:
+			septum_aperture = min_x
+		elif max_x < aperture_inf and abs(min_x) > aperture_inf:
+			septum_aperture = max_x
+		else:
+			raise ValueError(
+				f"Provided septum does not have one sided aperture"
+			)
+		
+		sept_crossing = calculate_septum_crossing(x_unstable, px_unstable, septum_aperture)
+	else:
+		raise SeparatrixSearchError("Unstable particle is not extracted but lost in the line")
 
 	if verbose == 2:
 		import matplotlib.pyplot as plt
@@ -180,7 +229,7 @@ def get_separatrix_properties(
 			)
 
 			plt.axvline(
-				x = x_exit, color = "tab:blue", 
+				x = septum_aperture, color = "tab:blue", 
 				label = "Septum", lw = 2.0, 
 				ls = 'dashed'
 			)
@@ -200,7 +249,41 @@ def get_separatrix_properties(
 		'spiral_step': sept_crossing['spiral_step'],
 		'angle': sept_crossing['angle']
 	}
-	
+
+class ActionSeparatrix(xt.Action):
+	"""
+	An Action that can be used with default `xt.Line.match()` to match the 
+	separatrix properties such as area
+
+	"""
+	def __init__(self, 
+		line: xt.Line,
+		septum: dict,
+		ex_norm: float, 
+		test_range: list[float] = [-2.0, 0.0],
+		*,
+		n_particles: int = 5, 
+		num_turns: int = 500,
+		ion: xt.Particles | None = None,
+		precision: float = 1e-4,
+		shrinkage_strength: int | str = "max",
+		max_iterations: int = 2_000,
+		twiss: xt.TwissTable | None = None,
+		verbose: int = 0,
+		):
+
+		for name, value in locals().copy().items():
+			if name != "self":
+				setattr(self, name, value)
+
+	def run(self) -> dict:
+		try:
+			res = get_separatrix_properties(**self.__dict__)
+		except SeparatrixSearchError:
+			return 'failed'
+
+		return res
+
 def get_separatrix_vertices(
 	line: xt.Line, 
 	ex_norm: float, 

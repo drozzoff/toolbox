@@ -6,9 +6,10 @@ import xtrack as xt
 def stable_particle_id(
 	line: xt.Line, 
 	particles: xt.Particles, 
-	num_turns,
+	num_turns: int,
+	*,
 	twiss: xt.TwissTable | None = None,
-	**kwargs
+	verbose: int = 1
 	) -> tuple[int, list]:
 	"""
 	Evaluates the `particle_id` of a particle in `particles` that is located
@@ -27,15 +28,12 @@ def stable_particle_id(
 		Particles objec with `x` coordinate being continous
 	num_turns
 		Number of turns for the tracking
-	twiss
+	twiss : xt.TwissTable
 		TwissTable for the lattice. If not provided, is evaluated internally.
-	
-	Additional parameters
-	---------------------
 	verbose : int
 		If <= 1, function does not generate any ouput. 
 		For `verbose > 1` plots the particles' tracks
-
+		
 	Returns
 	-------
 	Tuple with the id of a stable particle and list of action differences
@@ -43,12 +41,8 @@ def stable_particle_id(
 	"""
 	n_particles = particles._num_active_particles
 
-	if isinstance(twiss, xt.TwissTable):
-		tw = twiss
-	else:
-		tw = line.twiss4d()	
-
-	verbose = kwargs.get("verbose", 0)
+	if twiss is None:
+		twiss = line.twiss4d()
 
 	line.track(
 		particles, 
@@ -57,37 +51,73 @@ def stable_particle_id(
 	)
 
 	rec = line.record_last_track
-	nc = tw.get_normalized_coordinates(rec.data)
+	nc = twiss.get_normalized_coordinates(rec.data)
 
-	x_norms = np.split(nc.x_norm, n_particles)
-	px_norms = np.split(nc.px_norm, n_particles)
+	x_norms = np.asarray(nc.x_norm).reshape(n_particles, -1)
+	px_norms = np.asarray(nc.px_norm).reshape(n_particles, -1)
+	radius = np.hypot(x_norms, px_norms)
+
+	particles.sort(interleave_lost_particles = True)	
 	
-	Jx_mean = []
+	turns = np.arange(x_norms.shape[1])
+	mask = turns[None, :] <= particles.at_turn[:, None]
 	
-	particles.sort(interleave_lost_particles = True)
-	
-	for particle_id in range(n_particles):
-		lost_at_turn = particles.at_turn[particle_id]
-		Jx = list(map(
-			lambda x, y: np.sqrt(x**2 + y**2), 
-			x_norms[particle_id][:lost_at_turn + 1], 
-			px_norms[particle_id][:lost_at_turn + 1]
-		))
-	  
-		Jx_mean.append(np.mean(Jx))
-	
-	jx_diff = []
-	for i, var in enumerate(Jx_mean):
-		if i == 0:
-			jx_diff.append(0)
-			continue
-		else:
-			jx_diff.append(abs(var - Jx_mean[i - 1]))
+	Jx_mean = np.sum(radius, axis = 1, where = mask) / mask.sum(axis = 1)
+	jx_diff = np.concatenate((
+		np.zeros(1, dtype = Jx_mean.dtype),
+		np.abs(np.diff(Jx_mean)),
+	))
 	
 	particle_id_stable = np.argmax(jx_diff)
 	if verbose > 1:
 		import matplotlib.pyplot as plt
 		import seaborn as sns
+			
+		with sns.axes_style("whitegrid"):
+			for i in range(n_particles):
+				sns.scatterplot(
+					x = x_norms[i],
+					y = px_norms[i],
+					color = "red", 
+					alpha = 0.6, 
+					s = 5,
+				)
+
+			plt.xlabel("X")
+			plt.ylabel("PX")
+
+			plt.show()
+	
+	return np.arange(n_particles) >= particle_id_stable, jx_diff
+
+def stable_particle_id_by_loss(
+	line: xt.Line, 
+	particles: xt.Particles, 
+	num_turns,
+	*,
+	verbose: int = 1,
+	twiss: xt.TwissTable | None = None,
+	) -> np.array:
+	line.track(
+		particles, 
+		num_turns = num_turns, 
+		turn_by_turn_monitor = verbose > 1
+	)
+
+	if verbose > 1:
+		import matplotlib.pyplot as plt
+		import seaborn as sns
+
+		if twiss is None:
+			twiss = line.twiss4d()
+
+		n_particles = particles._capacity
+
+		rec = line.record_last_track
+		nc = twiss.get_normalized_coordinates(rec.data)
+	
+		x_norms = np.asarray(nc.x_norm).reshape(n_particles, -1)
+		px_norms = np.asarray(nc.px_norm).reshape(n_particles, -1)
 
 		with sns.axes_style("whitegrid"):
 			for i in range(n_particles):
@@ -104,7 +134,15 @@ def stable_particle_id(
 
 			plt.show()
 	
-	return particle_id_stable, jx_diff
+	particles.sort(interleave_lost_particles = True)	
+	
+	return particles.state == 1
+
+class NoStableParticleError(RuntimeError):
+    """Expected failure"""
+
+class NoUnstableParticleError(RuntimeError):
+    """Expected failure"""
 
 def get_stable_limit(
 	line: xt.Line, 
@@ -117,7 +155,8 @@ def get_stable_limit(
 	precision: float = 1e-4,
 	shrinkage_strength: int | str = "max",
 	max_iterations: int = 2_000,
-	**kwargs
+	twiss: xt.TwissTable | None = None,
+	verbose: int = 1,
 	):
 
 	"""
@@ -152,9 +191,8 @@ def get_stable_limit(
 		Default is `'max'`.
 	max_iterations : int
 		Limit on the number of iterations. Default is `2000`.
-		
-	Additional parameters
-	---------------------
+	twiss : xt.TwissTable
+		TwissTable for the lattice. If not provided, is evaluated internally.
 	verbose : int
 		If `verbose < 1` no output is printed.
 		If `verbose == 1` prints the progress bar (**default**)
@@ -172,7 +210,9 @@ def get_stable_limit(
 	if precision <= 0:
 		raise ValueError("precision must be positive")
 
-	verbose = kwargs.get("verbose", 1)
+	if twiss is None:
+		twiss = line.twiss4d()
+
 	range_low = test_range[0]
 	range_high = test_range[1]
 	initial_width = range_high - range_low
@@ -200,28 +240,38 @@ def get_stable_limit(
 	if with_progress:
 		progress.update(progress_init)
 
-	iterations_data = {
-		'jx_diff': [],
-		'x_norm': []
-	}
+	def update_progress(current_width):
+		progress_current = convergence_percent(current_width)
+		progress.update(progress_current - progress.n) 
 
+		progress.set_postfix(
+			width = f"{current_width:.2e}",
+			target = f"{precision:.2e}",
+			iteration = iter_id + 1,
+		)
+
+	W0 = twiss.W_matrix[0]
+	particle_on_co = twiss.particle_on_co
 	iter_id = 0
 	while (range_high - range_low) > precision and iter_id < max_iterations:
-		
-		x_test = np.linspace(range_low, range_high, n_particles)
-		iterations_data['x_norm'].append(x_test)
+		if iter_id == 0:
+			x_test = np.linspace(range_low, range_high, n_particles)
+		else:
+			x_test = np.linspace(range_low, range_high, n_particles + 2)[1:-1]
 		
 		test_beam = line.build_particles(
 			x_norm = x_test,
 			nemitt_x = ex_norm,
 			mode = "normalized_transverse",
-			method = '4d'
+			method = '4d',
+			W_matrix = W0,
+			particle_on_co = particle_on_co
 		)
 		if isinstance(ion, xt.Particles):
 			test_beam2 = xt.Particles(
 				mass0 = line.particle_ref.mass0, 
 				q0 = line.particle_ref.q0,
-				gamma0 = line.particle_ref.gamma0, # we assume rigidity is the same as of the reference beam
+				gamma0 = line.particle_ref.gamma0,
 				mass_ratio = ion.mass0 / line.particle_ref.mass0,
 				charge_ratio = ion.q0 / line.particle_ref.q0,
 				x = test_beam.x,
@@ -233,13 +283,45 @@ def get_stable_limit(
 			)
 			test_beam = test_beam2
 
-		particle_id_stable, jx_diff = stable_particle_id(
+		stable_mask = stable_particle_id_by_loss(
 			line = line, 
 			particles = test_beam, 
 			num_turns = num_turns,
-			verbose = verbose
+			verbose = verbose,
+			twiss = twiss
 		)
-		iterations_data['jx_diff'].append(jx_diff)
+
+		stable_indices = np.flatnonzero(stable_mask)
+
+		if stable_indices.size == 0:
+			if iter_id == 0:
+				raise NoStableParticleError
+
+			# No stable particles, looking on the right side
+			range_low = x_test[-1]
+			range_high = range_high
+
+			if with_progress:
+				update_progress(range_high - range_low)
+
+			iter_id += 1
+			continue
+
+		if stable_indices.size == n_particles:
+			if iter_id == 0:
+				raise NoUnstableParticleError
+		
+			# All particles are stable, looking on the left side
+			range_low = range_low
+			range_high = x_test[0]
+
+			if with_progress:
+				update_progress(range_high - range_low)
+
+			iter_id += 1
+			continue
+
+		particle_id_stable = int(stable_indices[0])
 		
 		if shrinkage_strength == "max":
 			range_low = x_test[particle_id_stable - 1]
@@ -251,22 +333,14 @@ def get_stable_limit(
 			range_high = x_test[right if right < n_particles else n_particles - 1]
 		
 		if with_progress:
-			current_width = range_high - range_low
-			progress_current = convergence_percent(current_width)
-			progress.update(progress_current - progress.n) 
-	
-			progress.set_postfix(
-				width=f"{current_width:.2e}",
-				target=f"{precision:.2e}",
-				iteration=iter_id + 1,
-			)
+			update_progress(range_high - range_low)
 
 		iter_id += 1
 	
 	if with_progress:
 		progress.close()
 		
-	return [range_low, range_high], iterations_data
+	return [range_low, range_high], None
 
 def get_stable_and_unstable_particle(
 	line: xt.Line, 
@@ -279,7 +353,8 @@ def get_stable_and_unstable_particle(
 	precision: float = 1e-6,
 	shrinkage_strength: int | str = "max",
 	max_iterations: int = 2_000,
-	**kwargs
+	twiss: xt.TwissTable | None = None,
+	verbose: int = 1,
 	) -> tuple[tuple[xt.Particles, xt.Particles], dict]:
 	"""
 	Estimates the separatrix limit around 3rd integer resonance and returns 1 particle at
@@ -296,26 +371,30 @@ def get_stable_and_unstable_particle(
 	num_turns
 		number of turns to track for the search
 	test_range
-		initial guess for the location of the stable region limit. Must contain two elements both negative.
-		The number corresponds to the normalized x coordinate to a sigma. (`xt.line.build_particles()`))
+		initial guess for the location of the stable region limit. 
+		Must contain two elements both negative. The number corresponds to the 
+		normalized x coordinate to a sigma. (`xt.line.build_particles()`))
 	ion
-		A particle to use for the tracking. Default is `None` -> uses reference particle associated with a beamline.
+		A particle to use for the tracking. Default is `None` -> uses reference
+		particle associated with a beamline.
 	precision
-		distance between the stable and unstable track. `test_range` is used to evaluate this.
+		distance between the stable and unstable track. `test_range` is used 
+		to evaluate this.
 	shrinkage_strength: int or str
 		Defines how the `test_range` is shrinked in iterations.
-		If `int` it leaves certain number of particles on the left and right of the identified
+		If `int` it leaves certain number of particles on the left and right 
+		of the identified
 		If `str` is `'max'` no extra steps are added.
 		Default is `'max'`.
 	max_iterations : int
 		Limit on the number of iterations. Default is `2000`.
-		
-	Additional parameters
-	---------------------
+	twiss : xt.TwissTable
+		TwissTable for the lattice. If not provided, is evaluated internally.
 	verbose : int
 		If `verbose < 1` no output is printed.
 		If `verbose == 1` prints the progress bar (**default**)
-		If `verbose > 1` prints the progress bar and particles distribution at each iteration
+		If `verbose > 1` prints the progress bar and particles distribution 
+		at each iteration
 
 	Returns
 	-------
@@ -325,6 +404,9 @@ def get_stable_and_unstable_particle(
 	dict
 		Contains the data of the iterations. Keys are `jx_diff` and `x_norm`.
 	"""
+	if twiss is None:
+		twiss = line.twiss4d()
+
 	res, iteration_data = get_stable_limit(
 		line, 
 		ex_norm, 
@@ -335,13 +417,17 @@ def get_stable_and_unstable_particle(
 		precision = precision,
 		shrinkage_strength = shrinkage_strength,
 		max_iterations = max_iterations,
-		**kwargs
+		twiss = twiss,
+		verbose = verbose,
 	)
 
+	W0 = twiss.W_matrix[0]
 	tmp = line.build_particles(
 		x_norm = res,
 		nemitt_x = ex_norm,
 		mode = "normalized_transverse",
+		W_matrix = W0,
+		particle_on_co = twiss.particle_on_co,
 		method = "4d"
 	)
 
