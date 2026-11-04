@@ -1,3 +1,3 @@
 from toolbox.phase_space.separatrix_search import get_stable_and_unstable_particle
-from toolbox.phase_space.separatrix_geometry import get_separatrix_vertices, get_separatrix_properties
+from toolbox.phase_space.separatrix_geometry import get_separatrix_vertices, get_separatrix_properties, SepProperties
 from toolbox.phase_space.extra import *

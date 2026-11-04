@@ -97,7 +97,7 @@ def stable_particle_id_by_loss(
 	*,
 	verbose: int = 1,
 	twiss: xt.TwissTable | None = None,
-	) -> tuple[int, list]:
+	) -> np.array:
 	line.track(
 		particles, 
 		num_turns = num_turns, 
@@ -136,7 +136,13 @@ def stable_particle_id_by_loss(
 	
 	particles.sort(interleave_lost_particles = True)	
 	
-	return particles.state == 1, None
+	return particles.state == 1
+
+class NoStableParticleError(RuntimeError):
+    """Expected failure"""
+
+class NoUnstableParticleError(RuntimeError):
+    """Expected failure"""
 
 def get_stable_limit(
 	line: xt.Line, 
@@ -234,11 +240,6 @@ def get_stable_limit(
 	if with_progress:
 		progress.update(progress_init)
 
-	iterations_data = {
-		'jx_diff': [],
-		'x_norm': []
-	}
-
 	def update_progress(current_width):
 		progress_current = convergence_percent(current_width)
 		progress.update(progress_current - progress.n) 
@@ -257,8 +258,6 @@ def get_stable_limit(
 			x_test = np.linspace(range_low, range_high, n_particles)
 		else:
 			x_test = np.linspace(range_low, range_high, n_particles + 2)[1:-1]
-
-		iterations_data['x_norm'].append(x_test)
 		
 		test_beam = line.build_particles(
 			x_norm = x_test,
@@ -284,7 +283,7 @@ def get_stable_limit(
 			)
 			test_beam = test_beam2
 
-		stable_mask, jx_diff = stable_particle_id_by_loss(
+		stable_mask = stable_particle_id_by_loss(
 			line = line, 
 			particles = test_beam, 
 			num_turns = num_turns,
@@ -292,14 +291,11 @@ def get_stable_limit(
 			twiss = twiss
 		)
 
-		iterations_data['jx_diff'].append(jx_diff)
-
 		stable_indices = np.flatnonzero(stable_mask)
 
 		if stable_indices.size == 0:
 			if iter_id == 0:
-				raise ValueError(
-					"Provided test_range contains no stable particles!")
+				raise NoStableParticleError
 
 			# No stable particles, looking on the right side
 			range_low = x_test[-1]
@@ -313,7 +309,7 @@ def get_stable_limit(
 
 		if stable_indices.size == n_particles:
 			if iter_id == 0:
-				raise ValueError("Provided test_range contains no unstable particles!")
+				raise NoUnstableParticleError
 		
 			# All particles are stable, looking on the left side
 			range_low = range_low
@@ -344,7 +340,7 @@ def get_stable_limit(
 	if with_progress:
 		progress.close()
 		
-	return [range_low, range_high], iterations_data
+	return [range_low, range_high], None
 
 def get_stable_and_unstable_particle(
 	line: xt.Line, 

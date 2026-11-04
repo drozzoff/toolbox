@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Modified functions related to separatrix search/properties to accept cached twiss.
+- Separatrix search is done using the lost particles.
+- `get_separatrix_properties()` is more robust to fails and can be used with optimizers.
+
 ## [0.1.3] - 03-11-2026
 
 ### Added
