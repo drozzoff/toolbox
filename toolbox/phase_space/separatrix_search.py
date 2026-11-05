@@ -147,8 +147,8 @@ class NoUnstableParticleError(RuntimeError):
 def get_stable_limit(
 	line: xt.Line, 
 	ex_norm: float, 
-	n_particles: int = 21, 
-	num_turns: int = 1_000,
+	n_particles: int = 2, 
+	num_turns: int = 500,
 	*,
 	test_range: list[float] = [-3.0, 0.0], 
 	ion: xt.Particles | None = None, 
@@ -355,8 +355,8 @@ def get_stable_limit(
 def get_stable_and_unstable_particle(
 	line: xt.Line, 
 	ex_norm: float, 
-	n_particles: int = 21, 
-	num_turns: int = 1_000,
+	n_particles: int = 2, 
+	num_turns: int = 500,
 	*,
 	test_range: list[float] = [-3.0, 0.0], 
 	ion: xt.Particles | None = None, 

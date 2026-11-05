@@ -1,8 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.4-fixes]
 
-###Changed
+### Changed
+
+- Modified the default number of particles
 
 ## [0.1.4] - 04-11-2026
 
