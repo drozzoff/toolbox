@@ -3,7 +3,7 @@ from tqdm.notebook import tqdm
 import xtrack as xt
 
 
-def stable_particle_id(
+def stable_particle_id_by_jx_diff(
 	line: xt.Line, 
 	particles: xt.Particles, 
 	num_turns: int,
@@ -147,8 +147,8 @@ class NoUnstableParticleError(RuntimeError):
 def get_stable_limit(
 	line: xt.Line, 
 	ex_norm: float, 
-	n_particles: int = 21, 
-	num_turns: int = 1_000,
+	n_particles: int = 2, 
+	num_turns: int = 500,
 	*,
 	test_range: list[float] = [-3.0, 0.0], 
 	ion: xt.Particles | None = None, 
@@ -213,6 +213,8 @@ def get_stable_limit(
 	if twiss is None:
 		twiss = line.twiss4d()
 
+	binary_search = n_particles == 1
+
 	range_low = test_range[0]
 	range_high = test_range[1]
 	initial_width = range_high - range_low
@@ -254,11 +256,18 @@ def get_stable_limit(
 	particle_on_co = twiss.particle_on_co
 	iter_id = 0
 	while (range_high - range_low) > precision and iter_id < max_iterations:
-		if iter_id == 0:
-			x_test = np.linspace(range_low, range_high, n_particles)
+
+		if binary_search:
+			if iter_id == 0:
+				x_test = np.array([range_low, range_high])
+			else:
+				x_test = np.array([0.5 * (range_low + range_high)])
 		else:
-			x_test = np.linspace(range_low, range_high, n_particles + 2)[1:-1]
-		
+			if iter_id == 0:
+				x_test = np.linspace(range_low, range_high, n_particles)
+			else:
+				x_test = np.linspace(range_low, range_high, n_particles + 2)[1:-1]
+			
 		test_beam = line.build_particles(
 			x_norm = x_test,
 			nemitt_x = ex_norm,
@@ -307,7 +316,7 @@ def get_stable_limit(
 			iter_id += 1
 			continue
 
-		if stable_indices.size == n_particles:
+		if stable_indices.size == x_test.size:
 			if iter_id == 0:
 				raise NoUnstableParticleError
 		
@@ -322,15 +331,16 @@ def get_stable_limit(
 			continue
 
 		particle_id_stable = int(stable_indices[0])
-		
-		if shrinkage_strength == "max":
-			range_low = x_test[particle_id_stable - 1]
-			range_high = x_test[particle_id_stable]
-		elif isinstance(shrinkage_strength, int):
-			left = particle_id_stable - 1 - shrinkage_strength
-			right = particle_id_stable + shrinkage_strength
-			range_low = x_test[left if left >= 0 else 0]
-			range_high = x_test[right if right < n_particles else n_particles - 1]
+
+		if not binary_search:
+			if shrinkage_strength == "max":
+				range_low = x_test[particle_id_stable - 1]
+				range_high = x_test[particle_id_stable]
+			elif isinstance(shrinkage_strength, int):
+				left = particle_id_stable - 1 - shrinkage_strength
+				right = particle_id_stable + shrinkage_strength
+				range_low = x_test[left if left >= 0 else 0]
+				range_high = x_test[right if right < n_particles else n_particles - 1]
 		
 		if with_progress:
 			update_progress(range_high - range_low)
@@ -345,8 +355,8 @@ def get_stable_limit(
 def get_stable_and_unstable_particle(
 	line: xt.Line, 
 	ex_norm: float, 
-	n_particles: int = 21, 
-	num_turns: int = 1_000,
+	n_particles: int = 2, 
+	num_turns: int = 500,
 	*,
 	test_range: list[float] = [-3.0, 0.0], 
 	ion: xt.Particles | None = None, 
