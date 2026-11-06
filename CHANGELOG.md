@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4b] - 06-11-2026
+
+### Changed
+
+- Better error hanlding in the `get_separatrix_properties()` during optimizations.
+
+
 ## [0.1.4a] - 05-11-2026
 
 ### Changed
