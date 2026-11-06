@@ -3,7 +3,14 @@ import numpy as np
 import xtrack as xt
 from pandas import DataFrame
 from skimage.measure import ransac, LineModelND
-from toolbox.phase_space.separatrix_search import get_stable_and_unstable_particle, NoStableParticleError, NoUnstableParticleError
+from toolbox.phase_space.separatrix_search import get_stable_and_unstable_particle
+from toolbox.phase_space.exceptions import (
+	NoStableParticleError, 
+	NoUnstableParticleError,
+	SeparatrixSearchError,
+	SeptumCrossingError
+)
+
 
 def sort_by_angle(x: np.array, px: np.array) -> tuple[np.array, np.array]:
 	points = np.column_stack([x, px])
@@ -21,14 +28,16 @@ def calcualte_enclosed_area(x: np.array, px: np.array) -> float:
 
 	return 0.5 * np.abs(np.sum(x_s * np.roll(px_s, -1) - px_s * np.roll(x_s, -1)))
 
-class SeptumCrossingError(RuntimeError):
-	"""Error for when the septum crossing search fails"""
-
 def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 	"""
 	x_exit is the septum aperture
 	"""
-	alive_mask = (x != 0) & (px != 0)
+	alive_mask = (
+		np.isfinite(x)
+		& np.isfinite(px)
+		& ((x != 0) | (px != 0))
+	)
+
 	x_alive = x[alive_mask]
 	px_alive = px[alive_mask]
 
@@ -36,7 +45,7 @@ def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 		raise SeptumCrossingError(
 			"Cannot calculate the septum crossing. "
 			f"The unstable trajectory contains {x_alive.size} points. "
-			"At least 2 are needed."
+			"At least 2 points are needed."
 		)
 
 	x_mean = np.mean(x_alive)
@@ -52,12 +61,18 @@ def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 	x0 = x_alive[extracted_id]
 	px0 = px_alive[extracted_id]
 
-	dist = np.sqrt((x - x0)**2 + (px - px0)**2)
+	dist = np.hypot(x_alive - x0, px_alive - px0)
 	dist[extracted_id] = np.inf
 
 	closest_id = np.argmin(dist)
 	x1 = x_alive[closest_id]
 	px1 = px_alive[closest_id]
+
+	if np.isclose(x0, x1):
+		raise SeptumCrossingError(
+			"Cannot interpolate the septum angle because "
+			"the selected points have the same x coordinate."
+		)
 
 	spiral_step = abs(x1 - x0)
 	angle = px1 + (x_exit - x1) * (px0 - px1) / (x0 - x1)
@@ -68,9 +83,6 @@ def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 		'last_point': [x0, px0],
 		'prelast_point': [x1, px1],
 	}
-
-class SeparatrixSearchError(RuntimeError):
-	"""Generic error when separatrix search fails"""
 
 def get_separatrix_properties(
 	line: xt.Line,
@@ -110,9 +122,9 @@ def get_separatrix_properties(
 		Must contain two elements both negative. The number corresponds to the 
 		normalized coordinate divided by a sigma. (`xt.line.build_particles()`))
 	n_particles
-		Number of particles used for the search. Default is 21.
+		Number of particles used for the search. Default is 2.
 	num_turns
-		Number of turns to track for the search. Default is 1k.
+		Number of turns to track for the search. Default is 500.
 	ion
 		A particle to use for the tracking. 
 		Default is `None` -> uses reference particle associated with a beamline.
@@ -156,13 +168,11 @@ def get_separatrix_properties(
 			twiss = twiss,
 			verbose = verbose,
 		)
-	except (NoStableParticleError, NoUnstableParticleError) as e:
+	except (NoStableParticleError, NoUnstableParticleError) as error:
 		raise SeparatrixSearchError(
 			f"`test_range` provided is bad."
 			f"Caught {e} during the tracking."
-			)
-	except SeptumCrossingError:
-		raise SeparatrixSearchError("Septum crossing evaluation failed")
+			) from error
 
 	stable_particle, unstable_particle = particles
 
@@ -189,7 +199,10 @@ def get_separatrix_properties(
 	px_unstable = unstable_rec.px.ravel()
 
 	if p.state[0] > 0:
-		raise ValueError(f"Selected unstable particle survived all {num_turns} turns")
+		raise RuntimeError(
+			"Internal inconsistency error: the particle returned as "
+			f"unstable survived all {num_turns} turns."
+		)
 
 	# looking closely at the loss location
 	ele_id_lost = p.at_element[0]
@@ -215,8 +228,11 @@ def get_separatrix_properties(
 			raise ValueError(
 				f"Provided septum does not have one sided aperture"
 			)
-		
-		sept_crossing = calculate_septum_crossing(x_unstable, px_unstable, septum_aperture)
+		try:
+
+			sept_crossing = calculate_septum_crossing(x_unstable, px_unstable, septum_aperture)
+		except SeptumCrossingError as e:
+			raise SeparatrixSearchError("Septum crossing evaluation failed") from e
 	else:
 		raise SeparatrixSearchError("Unstable particle is not extracted but lost in the line")
 
