@@ -21,6 +21,9 @@ def calcualte_enclosed_area(x: np.array, px: np.array) -> float:
 
 	return 0.5 * np.abs(np.sum(x_s * np.roll(px_s, -1) - px_s * np.roll(x_s, -1)))
 
+class SeptumCrossingError(RuntimeError):
+	"""Error for when the septum crossing search fails"""
+
 def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 	"""
 	x_exit is the septum aperture
@@ -28,6 +31,13 @@ def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 	alive_mask = (x != 0) & (px != 0)
 	x_alive = x[alive_mask]
 	px_alive = px[alive_mask]
+
+	if x_alive.size < 2:
+		raise SeptumCrossingError(
+			"Cannot calculate the septum crossing. "
+			f"The unstable trajectory contains {x_alive.size} points. "
+			"At least 2 are needed."
+		)
 
 	x_mean = np.mean(x_alive)
 
@@ -42,7 +52,7 @@ def calculate_septum_crossing(x: np.array, px: np.array, x_exit: float) -> dict:
 	x0 = x_alive[extracted_id]
 	px0 = px_alive[extracted_id]
 
-	dist = np.sqrt((x - x0) + (px - px0)**2)
+	dist = np.sqrt((x - x0)**2 + (px - px0)**2)
 	dist[extracted_id] = np.inf
 
 	closest_id = np.argmin(dist)
@@ -151,6 +161,8 @@ def get_separatrix_properties(
 			f"`test_range` provided is bad."
 			f"Caught {e} during the tracking."
 			)
+	except SeptumCrossingError:
+		raise SeparatrixSearchError("Septum crossing evaluation failed")
 
 	stable_particle, unstable_particle = particles
 
