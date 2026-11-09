@@ -26,5 +26,6 @@ nav:
   - Guides:
     - Multi-GPU tracking: guides/multi_gpu.md
     - Separatrix search: guides/separatrix_search.md
+    - Speratrix matching: guides/separatrix_matching.md
   - API References:
     - track_multi_gpu(): reference/multi_gpu.md

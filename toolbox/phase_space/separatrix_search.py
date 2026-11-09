@@ -1,6 +1,7 @@
 import numpy as np
 from tqdm.notebook import tqdm
 import xtrack as xt
+from toolbox.phase_space.exceptions import NoStableParticleError, NoUnstableParticleError
 
 
 def stable_particle_id_by_jx_diff(
@@ -137,12 +138,6 @@ def stable_particle_id_by_loss(
 	particles.sort(interleave_lost_particles = True)	
 	
 	return particles.state == 1
-
-class NoStableParticleError(RuntimeError):
-    """Expected failure"""
-
-class NoUnstableParticleError(RuntimeError):
-    """Expected failure"""
 
 def get_stable_limit(
 	line: xt.Line, 
@@ -304,7 +299,9 @@ def get_stable_limit(
 
 		if stable_indices.size == 0:
 			if iter_id == 0:
-				raise NoStableParticleError
+				raise NoStableParticleError(
+					"No stable particle was found in the initial test range."
+				)
 
 			# No stable particles, looking on the right side
 			range_low = x_test[-1]
@@ -318,7 +315,9 @@ def get_stable_limit(
 
 		if stable_indices.size == x_test.size:
 			if iter_id == 0:
-				raise NoUnstableParticleError
+				raise NoUnstableParticleError(
+					"No unstable particle was found in the initial test range."
+				)
 		
 			# All particles are stable, looking on the left side
 			range_low = range_low
@@ -449,7 +448,6 @@ def get_stable_and_unstable_particle(
 		beam_creation_opt['py'] = ion.py
 		beam_creation_opt['delta'] = ion.delta
 		beam_creation_opt['zeta'] = ion.zeta
-
 
 	stable_particle = xt.Particles(
 		mass0 = line.particle_ref.mass0, 

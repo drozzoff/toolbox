@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.5] - 09-11-2026
+
+### Changed
+
+- Custom exceptions for the separatrix search are propagated upward.
+
+### Added
+
+- New submodule for the creation of Pool of isolated `xtrack` lines at `toolbox.parallel`.
+
+
 ## [0.1.4b] - 06-11-2026
 
 ### Changed
