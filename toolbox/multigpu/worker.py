@@ -150,7 +150,6 @@ def worker(
 	device: str | int,
 	num_turns: int,
 	folder: str,
-	*,
 	backend: str = "opencl",
 	verbose: int = 0,
 	record_every: int | None = None,
@@ -202,6 +201,7 @@ def worker(
 	"""
 	t0 = time.time()
 
+	print(verbose)
 	default_track_kwargs = {
 		"time": True,
 		"turn_by_turn_monitor": False,
