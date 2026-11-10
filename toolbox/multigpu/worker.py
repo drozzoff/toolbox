@@ -2,6 +2,7 @@ from collections.abc import Callable
 import time
 import os
 import xobjects as xo
+from xobjects.context import XContext
 import xtrack as xt
 import numpy as np
 import pickle as pk
@@ -19,7 +20,7 @@ def log_worker(t0, device, msg, *, verbose: int = 2):
 def save_monitor_portion(
 	output: h5py.File,
 	monitor: xt.ParticlesMonitor,
-	context: xo.ContextPyopencl,
+	context: XContext,
 	*,
 	portion_index: int,
 	portion_start: int,
@@ -135,11 +136,22 @@ def split_turns(
 
 	return portions
 
+def create_context(backend, device):
+	if backend == "opencl":
+		return xo.ContextPyopencl(device = device)
+
+	if backend == "cuda":
+		return xo.ContextCupy(device = device)
+
+	raise ValueError(f"Unknown GPU backend {backend}")
+
 def worker(
 	build_line: Callable[[], xt.Line],
-	device: str,
+	device: str | int,
 	num_turns: int,
 	folder: str,
+	*,
+	backend: str = "opencl",
 	verbose: int = 0,
 	record_every: int | None = None,
 	checkpoint_every: int | None = None,
@@ -151,12 +163,7 @@ def worker(
 	record the data. The worker splits the total number of turns into multiple chunks
 	of turns, so the memory the monitor occupies remains below the **limit**. 
 
-	The limit is either given as an argument or is set based on the rule of thumb:
-	```python
-	monitor_budget = min(
-	int(0.20 * device.global_mem_size),
-	int(0.80 * device.max_mem_alloc_size)
-	)
+	The limit is either given as an argument or is allocated around 20% of avaliable vram.
 
 	When `checkpoint_every` is specified, dumps the `Particles` object back to the user 
 	specified fodler every `checkpoint_every` number of turns. Its purpose is to provide a
@@ -172,7 +179,11 @@ def worker(
 		Number of turns to track the particles
 	folder
 		Name of the folder to read/write the particles' data. Typically is temporarily
-		created folder provided by the upper functions.
+		created folder provided by `track_multigpu()` automatically.
+	backend
+		Which backend to use. Can be either 
+		- `"opencl"`: for general case of Nvidia/AMD GPUs
+		- `"cuda"`: for Nvidia GPUs specifically.
 	verbose
 		If `varbose > 1` prints the output from the worker
 	record_every
@@ -199,7 +210,7 @@ def worker(
 
 	log_worker(t0, device, "Created tracking configureation", verbose = verbose)
 	
-	current_context =  xo.ContextPyopencl(device)
+	current_context = create_context(backend, device)
 	log_worker(t0, device, "Created context", verbose = verbose)
 
 	line_to_track = build_line()
@@ -240,11 +251,17 @@ def worker(
 	turns_budget = None
 
 	if record_every:
-		if monitor_budget is None:
+		if monitor_budget is None and backend == "opencl":
 			monitor_budget = min(
 				int(0.20 * current_context.device.global_mem_size),
 				int(0.80 * current_context.device.max_mem_alloc_size)
 			)
+		
+		if monitor_budget is None and backend == "cuda":
+			cp = current_context.nplike_lib
+			free_mem, total_mem = cp.cude.runtime.memGetInfo()
+
+			monitor_budget = int(0.2 * free_mem)
 
 		bytes_per_record = sum(
 			field_type._size
