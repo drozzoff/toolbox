@@ -258,7 +258,7 @@ def worker(
 		
 		if monitor_budget is None and backend == "cuda":
 			cp = current_context.nplike_lib
-			free_mem, total_mem = cp.cude.runtime.memGetInfo()
+			free_mem, total_mem = cp.cuda.runtime.memGetInfo()
 
 			monitor_budget = int(0.2 * free_mem)
 
