@@ -108,9 +108,23 @@ def track_multigpu(
 	t0 = time.time()
 
 	if backend == "opencl":
+		try:
+			import pyopencl
+		except ImportError as error:
+			raise RuntimeError(
+				"OpenCL backend requested, but PyOpenCL is not installed in the"
+				"current environment"
+			) from error
+		
 		devices = xo.ContextPyopencl.get_devices()
 	elif backend == "cuda":
-		import cupy as cp
+		try:
+			import cupy as cp
+		except ImportError as error:
+			raise RuntimeError(
+				"CUDA backend requested, but CuPy is not installed in the"
+				"current environment"
+			) from error
 		
 		devices = list(range(cp.cuda.runtime.getDeviceCount()))
 	else:
