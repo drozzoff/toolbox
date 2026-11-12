@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.6] - 12-11-2026
+
+### Added
+
+- Added an option to use CUDA backend for the multi gpu tracking
+
 ## [0.1.5] - 09-11-2026
 
 ### Changed

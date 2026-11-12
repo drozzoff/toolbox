@@ -38,8 +38,9 @@ def track_multigpu(
 	particles: xt.Particles | str,
 	*, 
 	line_constructor: Callable[[], xt.Line], 
-	num_turns: int, 
+	num_turns: int,
 	num_gpus: int,
+	backend: str = "opencl",
 	verbose: int = 1,
 	record_every: int | None = None,
 	checkpoint_every: int | None = None,
@@ -62,6 +63,10 @@ def track_multigpu(
 	    Number of turns to do the tracking for.
 	num_gpus
 	    Number of GPUs to use for the tracking.
+	backend
+		Which backend to use. Can be either 
+		- `"opencl"`: for general case of Nvidia/AMD GPUs
+		- `"cuda"`: for Nvidia GPUs specifically.
 	verbose
 	    Controls the output level.  
 	    **0** - no output  
@@ -102,7 +107,28 @@ def track_multigpu(
 
 	t0 = time.time()
 
-	devices = xo.ContextPyopencl.get_devices()
+	if backend == "opencl":
+		try:
+			import pyopencl
+		except ImportError as error:
+			raise RuntimeError(
+				"OpenCL backend requested, but PyOpenCL is not installed in the"
+				"current environment"
+			) from error
+		
+		devices = xo.ContextPyopencl.get_devices()
+	elif backend == "cuda":
+		try:
+			import cupy as cp
+		except ImportError as error:
+			raise RuntimeError(
+				"CUDA backend requested, but CuPy is not installed in the"
+				"current environment"
+			) from error
+		
+		devices = list(range(cp.cuda.runtime.getDeviceCount()))
+	else:
+		raise ValueError(f"Specified backend {backend} is not supported.")
 	
 	num_gpus_available = len(devices)
 	if num_gpus_available < num_gpus:
@@ -157,8 +183,9 @@ def track_multigpu(
 				line_constructor, 
 				device, 
 				num_turns, 
-				temp_folder, 
-				verbose, 
+				temp_folder,
+				backend,
+				verbose,
 				record_every,
 				checkpoint_every,
 				monitor_budget,
