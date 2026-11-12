@@ -217,7 +217,6 @@ def worker(
 	log_worker(t0, device, "Created a line", verbose = verbose)
 
 	line_to_track.build_tracker(_context = current_context)
-	line_to_track.optimize_for_tracking(verbose = False)
 
 	log_worker(t0, device, "Built tracker", verbose = verbose)
 
