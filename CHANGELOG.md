@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.6a] - 13-11-2026
+
+### Fixed
+
+- Typo in vram memory check for CUDA.
+- Removed `optimise_for_tracking()` from `multigpu.worker()`. It was casuing a crash when doing a tracking with frames
+
+### Added
+
+- The monitor in `track_multigpu()` also saves `charge_ratio`, `mass_ratio`, and `particle_id`.
+
 ## [0.1.6] - 12-11-2026
 
 ### Added
