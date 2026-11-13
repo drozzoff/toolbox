@@ -24,7 +24,7 @@ OPTIONAL_DEPENDENCIES = {
 
 setup(
 	name = "toolbox",
-	version = "0.1.6",
+	version = "0.1.6a",
 	description = "Some functionality aimed to be used with xsuite",
 	author = "Andrii Pastushenko",
 	url = "https://github.com/drozzoff/toolbox",

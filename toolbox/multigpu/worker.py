@@ -217,13 +217,13 @@ def worker(
 	log_worker(t0, device, "Created a line", verbose = verbose)
 
 	line_to_track.build_tracker(_context = current_context)
-	line_to_track.optimize_for_tracking(verbose = False)
 
 	log_worker(t0, device, "Built tracker", verbose = verbose)
 
+	ctx2np = current_context.nparray_from_context_array
+
 	with open(os.path.join(folder, f"in_beam_chunk_{device}.pkl"), 'rb') as fid:
 		beam_chunk = xt.Particles.from_dict(pk.load(fid), _context = current_context)
-		ctx2np = current_context.nparray_from_context_array
 
 		ids = ctx2np(beam_chunk.particle_id)
 
@@ -259,7 +259,7 @@ def worker(
 		
 		if monitor_budget is None and backend == "cuda":
 			cp = current_context.nplike_lib
-			free_mem, total_mem = cp.cude.runtime.memGetInfo()
+			free_mem, total_mem = cp.cuda.runtime.memGetInfo()
 
 			monitor_budget = int(0.2 * free_mem)
 
@@ -306,6 +306,27 @@ def worker(
 		checkpoint_id = 0
 		
 		with output_context as output:
+			if output is not None:
+				metadata = output.create_group("particles_metadata")
+
+				metadata.create_dataset(
+					"particle_id", 
+					data = ctx2np(beam_chunk.particle_id)
+				)
+
+				metadata.create_dataset(
+					"charge_ratio", 
+					data = ctx2np(beam_chunk.charge_ratio)
+				)
+
+				metadata.create_dataset(
+					"mass_ratio", 
+					data = ctx2np(beam_chunk.mass_ratio)
+				)
+
+				output.attrs["q0"] = float(beam_chunk.q0)
+				output.attrs["mass0"] = float(beam_chunk.mass0)
+
 			for portion_index, num_turns_portion in enumerate(turns_split):
 				monitor = False
 
