@@ -32,8 +32,8 @@ def stable_particle_id_by_jx_diff(
 	twiss : xt.TwissTable
 		TwissTable for the lattice. If not provided, is evaluated internally.
 	verbose : int
-		If <= 1, function does not generate any ouput. 
-		For `verbose > 1` plots the particles' tracks
+		If <= 2, function does not generate any ouput. 
+		For `verbose > 2` plots the particles' tracks
 		
 	Returns
 	-------
@@ -70,7 +70,7 @@ def stable_particle_id_by_jx_diff(
 	))
 	
 	particle_id_stable = np.argmax(jx_diff)
-	if verbose > 1:
+	if verbose > 2:
 		import matplotlib.pyplot as plt
 		import seaborn as sns
 			
@@ -99,13 +99,14 @@ def stable_particle_id_by_loss(
 	verbose: int = 1,
 	twiss: xt.TwissTable | None = None,
 	) -> np.array:
+	"""if verbose > 2 plots the tracking result"""
 	line.track(
 		particles, 
 		num_turns = num_turns, 
-		turn_by_turn_monitor = verbose > 1
+		turn_by_turn_monitor = verbose > 2
 	)
 
-	if verbose > 1:
+	if verbose > 2:
 		import matplotlib.pyplot as plt
 		import seaborn as sns
 
@@ -178,21 +179,22 @@ def get_stable_limit(
 	precision
 		Distance between the stable and unstable track. The distance is 
 		in the normalised phase space divided by sigma.
-	shrinkage_strength: int or str
+	shrinkage_strength
 		Defines how the `test_range` is shrinked in iterations.
 		If `int` it leaves certain number of particles on the left and 
 		right of the identified region.
 		If `str` is `'max'` no extra steps are added.
 		Default is `'max'`.
-	max_iterations : int
+	max_iterations
 		Limit on the number of iterations. Default is `2000`.
-	twiss : xt.TwissTable
+	twiss
 		TwissTable for the lattice. If not provided, is evaluated internally.
-	verbose : int
-		If `verbose < 1` no output is printed.
-		If `verbose == 1` prints the progress bar (**default**)
-		If `verbose > 1` prints the progress bar and particles distribution 
-		at each iteration
+	verbose
+		Controls the diagnostic output:
+
+		- `verbose <= 0`: no output is generated.
+		- `verbose >= 1`: prints the progress bar (**default**).
+		- `verbose > 2`: also plots particles' distribution at each iteration.
 
 	Returns
 	-------
@@ -214,7 +216,7 @@ def get_stable_limit(
 	range_high = test_range[1]
 	initial_width = range_high - range_low
 
-	with_progress = verbose > 0
+	with_progress = verbose >= 1
 	if with_progress:
 		log_span = np.log(initial_width / precision)
 
@@ -389,21 +391,22 @@ def get_stable_and_unstable_particle(
 	precision
 		distance between the stable and unstable track. `test_range` is used 
 		to evaluate this.
-	shrinkage_strength: int or str
+	shrinkage_strength
 		Defines how the `test_range` is shrinked in iterations.
 		If `int` it leaves certain number of particles on the left and right 
 		of the identified
 		If `str` is `'max'` no extra steps are added.
 		Default is `'max'`.
-	max_iterations : int
+	max_iterations
 		Limit on the number of iterations. Default is `2000`.
-	twiss : xt.TwissTable
+	twiss
 		TwissTable for the lattice. If not provided, is evaluated internally.
-	verbose : int
-		If `verbose < 1` no output is printed.
-		If `verbose == 1` prints the progress bar (**default**)
-		If `verbose > 1` prints the progress bar and particles distribution 
-		at each iteration
+	verbose
+		Controls the diagnostic output:
+		
+		- `verbose <= 0`: no output is generated.
+		- `verbose >= 1`: prints the progress bar (**default**).
+		- `verbose > 2`: also plots particles' distribution at each iteration.
 
 	Returns
 	-------

@@ -3,6 +3,7 @@ import numpy as np
 import xtrack as xt
 from pandas import DataFrame
 from skimage.measure import ransac, LineModelND
+
 from toolbox.phase_space.separatrix_search import get_stable_and_unstable_particle
 from toolbox.phase_space.exceptions import (
 	NoStableParticleError, 
@@ -11,6 +12,8 @@ from toolbox.phase_space.exceptions import (
 	SeptumCrossingError
 )
 
+
+UNLIMITED = 1e10 # same limit as in xsuite
 
 def sort_by_angle(x: np.array, px: np.array) -> tuple[np.array, np.array]:
 	points = np.column_stack([x, px])
@@ -141,10 +144,13 @@ def get_separatrix_properties(
 	twiss : xt.TwissTable
 		TwissTable for the lattice. If not provided, is evaluated internally.
 	verbose : int
-		If `verbose < 1` no output is printed.
-		If `verbose == 1` prints the progress bar (**default**)
-		If `verbose > 1` prints the progress bar and particles distribution 
-			at each iteration
+		Controls the diagnostic output:
+
+		- `verbose <= 0`: no output is generated.
+		- `verbose == 1`: prints the progress bar (**default**)
+		- `verbose == 2`: prints the progress bar and the final separatrix.
+		- `verbose >= 3`: prints the progress bar and the final separatrix and 
+			also intermidiate stages of the separatrix search.
 
 	Returns
 	-------
@@ -168,11 +174,11 @@ def get_separatrix_properties(
 			twiss = twiss,
 			verbose = verbose,
 		)
-	except (NoStableParticleError, NoUnstableParticleError) as error:
+	except (NoStableParticleError, NoUnstableParticleError) as e:
 		raise SeparatrixSearchError(
 			f"`test_range` provided is bad."
 			f"Caught {e} during the tracking."
-			) from error
+			) from e
 
 	stable_particle, unstable_particle = particles
 
@@ -210,33 +216,38 @@ def get_separatrix_properties(
 
 	septum_aperture = None
 
-	if ele_name_lost in (septum['entrance'], septum['exit']):
-		if ele_name_lost == septum['exit']:
+	entrance_name = septum["entrance"]
+	exit_name = septum.get("exit")
+
+	septum_elements = {entrance_name}
+	if exit_name is not None:
+		septum_elements.add(exit_name)
+
+	if ele_name_lost in septum_elements:
+		if ele_name_lost == exit_name:
 			warnings.warn(
 				"The unstable particle is lost on the exit aperture."
 				"It is possible it is lost on the septum wires."
 			)
 		min_x = line[septum['entrance']].min_x
 		max_x = line[septum['entrance']].max_x
-		aperture_inf = 1e8
 
-		if max_x > aperture_inf and abs(min_x) < aperture_inf:
+		if max_x == UNLIMITED and abs(min_x) < UNLIMITED:
 			septum_aperture = min_x
-		elif max_x < aperture_inf and abs(min_x) > aperture_inf:
+		elif max_x < UNLIMITED and abs(min_x) == UNLIMITED:
 			septum_aperture = max_x
 		else:
 			raise ValueError(
 				f"Provided septum does not have one sided aperture"
 			)
 		try:
-
 			sept_crossing = calculate_septum_crossing(x_unstable, px_unstable, septum_aperture)
 		except SeptumCrossingError as e:
 			raise SeparatrixSearchError("Septum crossing evaluation failed") from e
 	else:
 		raise SeparatrixSearchError("Unstable particle is not extracted but lost in the line")
 
-	if verbose == 2:
+	if verbose >= 2:
 		import matplotlib.pyplot as plt
 		import seaborn as sns
 
@@ -281,7 +292,7 @@ def get_separatrix_properties(
 class ActionSeparatrix(xt.Action):
 	"""
 	An Action that can be used with default `xt.Line.match()` to match the 
-	separatrix properties such as area
+	separatrix properties.
 
 	"""
 	def __init__(self, 
@@ -365,10 +376,12 @@ def get_separatrix_vertices(
 	Additional parameters
 	---------------------
 	verbose : int
-		If `verbose < 1` no output is printed.
+		If `verbose < 1` no output is generated.
 		If `verbose == 1` prints the progress bar (**default**)
-		If `verbose > 1` prints the progress bar and particles distribution 
-			at each iteration
+		If `verbose == 2` prints the progress bar and the final separatrix.
+		If `verbose > 2` prints the progress bar and the final separatrix and 
+		also intermidiate stages of the separatrix search.
+
 	zeta : np.array
 		`zeta` coordinate for the test beam
 	delta : np.array
@@ -443,7 +456,7 @@ def get_separatrix_vertices(
 
 		lines_properties.append(dict(a = a, b = b))
 
-		if verbose == 2:
+		if verbose > 2:
 			import matplotlib.pyplot as plt
 			import seaborn as sns
 			data = DataFrame({
@@ -486,7 +499,7 @@ def get_separatrix_vertices(
 		[[0, 1], [0, 2], [1, 2]]
 	)))
 
-	if verbose == 2:
+	if verbose >= 2:
 		import matplotlib.pyplot as plt
 		import seaborn as sns
 
