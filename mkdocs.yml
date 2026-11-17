@@ -18,6 +18,9 @@ plugins:
             allow_inspection: true
 
 markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
   - pymdownx.highlight
   - pymdownx.superfences
 
@@ -26,6 +29,7 @@ nav:
   - Guides:
     - Multi-GPU tracking: guides/multi_gpu.md
     - Separatrix search: guides/separatrix_search.md
-    - Speratrix matching: guides/separatrix_matching.md
+    - Separatrix matching: guides/separatrix_matching.md
   - API References:
-    - track_multi_gpu(): reference/multi_gpu.md
+    - Multi-GPU: reference/multi_gpu.md
+    - Separatrix: reference/separatrix.md

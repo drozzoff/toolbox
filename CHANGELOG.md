@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- `get_separatrix_properties()` checks the aperture is one sided by comparing against default value of `UNLIMITED = 1e10`.
+- Exit septum aperture in `get_separatrix_properties()` is optional now.
+- Modified verbosity in separatrix searches. Intermidiate search stages are displayed only when `verbosity` is >=3.
+
+### Added
+
+- better documentation and new landing page.
+
 ## [0.1.6a] - 13-11-2026
 
 ### Fixed

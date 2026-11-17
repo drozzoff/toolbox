@@ -26,22 +26,6 @@ An example output is
 ```text
 {'area': np.float64(7.926469222894832e-05), 'spiral_step': np.float64(0.002989079357082834), 'angle': np.float64(-0.007855679616157824)}
 ```
-Compact list of parameters:
-
-| Parameter | Type | Default | Description |
-|---|---|---:|---|
-| `line` | `xt.Line` | Required | Xtrack beamline used for particle generation and tracking. |
-| `septum` | `dict` | Required | Names of the septum entrance and exit aperture elements, given as `{"entrance": "...", "exit": "..."}`. |
-| `ex_norm` | `float` | Required | Horizontal normalized emittance used to construct the test particles. |
-| `test_range` | `list[float]` | `[-2.0, 0.0]` | Initial search interval in normalized horizontal phase space. The lower boundary must be unstable and the upper boundary stable. |
-| `n_particles` | `int` | `2` | Number of test points per iteration. A value of `1` uses bisection; `2` uses a three-section search; larger values use a multi-section search. |
-| `num_turns` | `int` | `500` | Number of turns used to determine whether a particle survives or is lost. |
-| `ion` | `xt.Particles \| None` | `None` | Optional particle species and longitudinal coordinates. If omitted, the reference particle associated with `line` is used. |
-| `precision` | `float` | `1e-4` | Maximum final distance between the unstable and stable initial normalized coordinates. |
-| `shrinkage_strength` | `int \| str` | `"max"` | Controls how aggressively the interval is reduced in a multi-particle search. `"max"` retains the closest unstable–stable pair. An integer retains additional neighboring points. Ignored when `n_particles = 1`. |
-| `max_iterations` | `int` | `2000` | Maximum number of search iterations before stopping. |
-| `twiss` | `xt.TwissTable \| None` | `None` | Optional precomputed Twiss table. If omitted, it is calculated internally using `line.twiss4d()`. |
-| `verbose` | `int` | `1` | Output level: `0` disables output, `1` displays progress, and values greater than `1` also produce diagnostic plots. |
 
 **The search works as follows:**
 - The separatrix is located by iteratively narrowing an interval in normalized horizontal phase space, x_norm. The initial interval must contain an unstable particle at its lower boundary and a stable particle at its upper boundary.

@@ -120,6 +120,7 @@ def get_separatrix_properties(
 			"exit": "gs04me1e_ex_aper"
 		}
 		```
+		**Only `"entrance"` is mandatory.**
 	test_range
 		initial guess for the location of the stable region limit. 
 		Must contain two elements both negative. The number corresponds to the 
