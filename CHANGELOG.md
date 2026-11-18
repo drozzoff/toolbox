@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- An issue in `get_separatrix_properties()` that was generating division by zero warnings
+- Progress bar `get_separatrix_properties()` not working when running from terminal
+
 ## [0.1.7] - 17-11-2026
 
 ### Changed
