@@ -113,7 +113,7 @@ def get_separatrix_properties(
 	ex_norm
 		Horizontal normalized emittance
 	septum
-		Dict with the names of the entrance and exit apertures. Eg.:
+		Dict with the names of the entrance and (optionally) exit apertures. Eg.:
 		```python
 		{
 			"entrance": 'gs04me1e_en_aper',
@@ -155,8 +155,16 @@ def get_separatrix_properties(
 
 	Returns
 	-------
-	Dictionary containing enclosed area, extraction angle and a spiral step.
-	Also includes bound and unbound trajectories in the phase space.		
+	Dictionary containing separatrix properties in the following form:
+
+	```python
+	{
+		'area': ...,
+		'spiral_step': ...,
+		'angle': ...
+	}
+	```
+		
 	"""
 	if twiss is None:
 		twiss = line.twiss4d()
@@ -292,8 +300,12 @@ def get_separatrix_properties(
 
 class ActionSeparatrix(xt.Action):
 	"""
-	An Action that can be used with default `xt.Line.match()` to match the 
-	separatrix properties.
+	An `xt.Action` that can be used with default `xt.Line.match()` to match the 
+	separatrix properties. Exact names of the parameters for the matching
+	
+	- `area`: separatrix area.
+	- `spiral_step`: spiral step
+	- `angle`: extraction angle at the septum.
 
 	"""
 	def __init__(self, 
@@ -312,6 +324,56 @@ class ActionSeparatrix(xt.Action):
 		verbose: int = 0,
 		):
 
+		"""
+		Constructs an xt.Action that runs `get_separatrix_properties()` when called.
+		
+		Parameters
+		----------
+		line
+			Beamline to do the tracking on
+		ex_norm
+			Horizontal normalized emittance
+		septum
+			Dict with the names of the entrance and (optionally) exit apertures. Eg.:
+			```python
+			{
+				"entrance": 'gs04me1e_en_aper',
+				"exit": "gs04me1e_ex_aper"
+			}
+			```
+			**Only `"entrance"` is mandatory.**
+		test_range
+			initial guess for the location of the stable region limit. 
+			Must contain two elements both negative. The number corresponds to the 
+			normalized coordinate divided by a sigma. (`xt.line.build_particles()`))
+		n_particles
+			Number of particles used for the search. Default is 2.
+		num_turns
+			Number of turns to track for the search. Default is 500.
+		ion
+			A particle to use for the tracking. 
+			Default is `None` -> uses reference particle associated with a beamline.
+		precision
+			distance between the stable and unstable track. Same unit as `test_range`
+		shrinkage_strength
+			Defines how the `test_range` is shrinked in iterations.
+			If `int` it leaves certain number of particles on the left and right 
+			of the identified. If `str` is `'max'` no extra steps are added.
+			Default is `'max'`.
+		max_iterations
+			Limit on the number of iterations for the stable area search and for RANSCAC.
+			Default is `2000`.
+		twiss : xt.TwissTable
+			TwissTable for the lattice. If not provided, is evaluated internally.
+		verbose
+			Controls the diagnostic output:
+	
+			- `verbose <= 0`: no output is generated. (**default**)
+			- `verbose == 1`: prints the progress bar 
+			- `verbose == 2`: prints the progress bar and the final separatrix.
+			- `verbose >= 3`: prints the progress bar and the final separatrix and 
+				also intermidiate stages of the separatrix search.
+		"""
 		for name, value in locals().copy().items():
 			if name != "self":
 				setattr(self, name, value)
