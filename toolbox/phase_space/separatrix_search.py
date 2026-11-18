@@ -116,16 +116,21 @@ def stable_particle_id_by_loss(
 		n_particles = particles._capacity
 
 		rec = line.record_last_track
-		nc = twiss.get_normalized_coordinates(rec.data)
-	
-		x_norms = np.asarray(nc.x_norm).reshape(n_particles, -1)
-		px_norms = np.asarray(nc.px_norm).reshape(n_particles, -1)
+		rec_alive = rec.data.filter(rec.data.state == 1)
+
+		nc = twiss.get_normalized_coordinates(rec_alive)
+
+		particle_ids = np.asarray(nc.particle_id)
+
+		x_norm = np.asarray(nc.x_norm)
+		px_norm = np.asarray(nc.px_norm)
 
 		with sns.axes_style("whitegrid"):
 			for i in range(n_particles):
+				mask = particle_ids == i
 				sns.scatterplot(
-					x = x_norms[i],
-					y = px_norms[i],
+					x = x_norm[mask],
+					y = px_norm[mask],
 					color = "red", 
 					alpha = 0.6, 
 					s = 5,
