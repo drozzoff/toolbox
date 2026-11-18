@@ -1,5 +1,5 @@
 import numpy as np
-from tqdm.notebook import tqdm
+from tqdm.auto import tqdm
 import xtrack as xt
 from toolbox.phase_space.exceptions import NoStableParticleError, NoUnstableParticleError
 
